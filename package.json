@@ -12,7 +12,10 @@
   "type": "module",
   "description": "",
   "types": "./types/index.d.ts",
-  "scripts": {},
+  "scripts": {
+    "minor": "./version.mjs minor",
+    "patch": "./version.mjs patch"
+  },
   "keywords": [],
   "author": "Degu Labs, Inc",
   "license": "MIT",
