@@ -20,7 +20,7 @@ await fs.promises.rm(typesDir, { recursive: true, force: true });
 const { errors } = await esbuild.build({
   color: true,
   entryPoints: [
-    path.join(srcDir, '**/*.ts'),
+    path.join(srcDir, 'playwright-test.ts'),
   ],
   outdir: outDir,
   format: 'esm',
