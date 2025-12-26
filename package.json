@@ -14,13 +14,21 @@
     }
   },
   "type": "module",
-  "description": "",
+  "description": "A custom Playwright test reporter that generates Flakiness Reports from your Playwright test runs",
   "types": "./types/index.d.ts",
   "scripts": {
     "minor": "./version.mjs minor",
     "patch": "./version.mjs patch"
   },
-  "keywords": [],
+  "keywords": [
+    "playwright",
+    "test",
+    "reporter",
+    "flakiness",
+    "testing",
+    "e2e",
+    "test-reporting"
+  ],
   "author": "Degu Labs, Inc",
   "license": "MIT",
   "devDependencies": {
