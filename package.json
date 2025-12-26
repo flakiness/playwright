@@ -1,0 +1,26 @@
+{
+  "name": "@flakiness/playwright",
+  "version": "0.149.1",
+  "private": false,
+  "exports": {
+    ".": {
+      "types": "./types/src/playwright-test.d.ts",
+      "import": "./lib/playwright-test.js",
+      "require": "./lib/playwright-test.js"
+    }
+  },
+  "type": "module",
+  "description": "",
+  "types": "./types/index.d.ts",
+  "scripts": {},
+  "keywords": [],
+  "author": "Degu Labs, Inc",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  },
+  "dependencies": {
+    "@flakiness/sdk": "^0.150.1",
+    "chalk": "^5.6.2"
+  }
+}

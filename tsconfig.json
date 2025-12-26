@@ -1,0 +1,22 @@
+{ "include": [
+      "src/**/*.ts"
+  ],
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "lib": [ "esnext", "DOM", "DOM.Iterable" ],
+    "strict": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+    "noEmit": false,
+    "outDir": "./types",
+    "strictBindCallApply": true,
+    "target": "ESNext",
+    "types": [ "node" ]
+  }
+}
