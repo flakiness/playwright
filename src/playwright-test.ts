@@ -298,7 +298,6 @@ export default class FlakinessReporter implements Reporter {
       context.project2environmentIdx.set(this._config.projects[envIdx], envIdx);
 
     const report = ReportUtils.normalizeReport({
-      version: 1,
       category: 'playwright',
       commitId: worktree.headCommitId(),
       relatedCommitIds: [],
