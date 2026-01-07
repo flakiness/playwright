@@ -4,7 +4,8 @@ import {
   GitWorktree,
   ReportUtils,
   showReport,
-  SystemUtilizationSampler,
+  CPUUtilization,
+  RAMUtilization,
   uploadReport,
   writeReport
 } from '@flakiness/sdk';
@@ -54,12 +55,15 @@ export default class FlakinessReporter implements Reporter {
   private _results = new Map<TestCase, Set<TestResult>>();
   private _unattributedErrors: TestError[] = [];
 
-  private _systemUtilizationSampler = new SystemUtilizationSampler();
+  private _cpuUtilization = new CPUUtilization({ precision: 10 });
+  private _ramUtilization = new RAMUtilization({ precision: 10 });
   private _report?: FK.Report;
   private _attachments: ReportUtils.Attachment[] = [];
   private _outputFolder: string;
 
   private _result?: FullResult;
+
+  private _telemetryTimer?: NodeJS.Timeout;
 
   constructor(private _options: {
     endpoint?: string,
@@ -69,6 +73,15 @@ export default class FlakinessReporter implements Reporter {
     collectBrowserVersions?: boolean,
   } = {}) {
     this._outputFolder = path.join(process.cwd(), this._options.outputFolder ?? process.env.FLAKINESS_OUTPUT_DIR ?? 'flakiness-report');
+
+    this._sampleSystem = this._sampleSystem.bind(this);
+    this._sampleSystem();
+  }
+
+  private _sampleSystem() {
+    this._cpuUtilization.sample();
+    this._ramUtilization.sample();
+    this._telemetryTimer = setTimeout(this._sampleSystem, 1000);
   }
 
   printsToStdio(): boolean {
@@ -218,7 +231,9 @@ export default class FlakinessReporter implements Reporter {
   }
 
   async onEnd(result: FullResult) {
-    this._systemUtilizationSampler.dispose();
+    clearTimeout(this._telemetryTimer);
+    this._cpuUtilization.sample();
+    this._ramUtilization.sample();
     if (!this._config || !this._rootSuite)
       throw new Error('ERROR: failed to resolve config');
     let commitId: FK.CommitId;
@@ -283,20 +298,21 @@ export default class FlakinessReporter implements Reporter {
       context.project2environmentIdx.set(this._config.projects[envIdx], envIdx);
 
     const report = ReportUtils.normalizeReport({
+      version: 1,
       category: 'playwright',
       commitId: worktree.headCommitId(),
       relatedCommitIds: [],
-      systemUtilization: this._systemUtilizationSampler.result,
       configPath,
       url: CIUtils.runUrl(),
       environments,
       suites: await this._toFKSuites(context, this._rootSuite),
-      opaqueData: this._config,
       unattributedErrors: this._unattributedErrors.map(e => this._toFKTestError(context, e)),
       duration: parseDurationMS(result.duration),
       startTimestamp: +result.startTime as FK.UnixTimestampMS,
     });
-    ReportUtils.createTestStepSnippetsInplace(worktree, report);
+    ReportUtils.collectSources(worktree, report);
+    this._cpuUtilization.enrich(report);
+    this._ramUtilization.enrich(report);
 
     for (const unaccessibleAttachment of context.unaccessibleAttachmentPaths)
       warn(`cannot access attachment ${unaccessibleAttachment}`);
@@ -365,8 +381,7 @@ function createEnvironments<T extends GenericProject>(projects: T[]): Map<T, FK.
 
     result.set(project, ReportUtils.createEnvironment({
       name,
-      userSuppliedData: metadata,
-      opaqueData: { project, },
+      metadata,
     }));
   }
   return result;
