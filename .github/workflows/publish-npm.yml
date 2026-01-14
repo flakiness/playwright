@@ -31,4 +31,4 @@ jobs:
         run: |
           pnpm i --frozen-lockfile
           pnpm exec kubik ./build.mts
-          pnpm publish
+          pnpm publish --no-git-checks
