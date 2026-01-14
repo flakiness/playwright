@@ -12,8 +12,8 @@ importers:
         specifier: ^0.22.0
         version: 0.22.0
       '@flakiness/sdk':
-        specifier: ^0.155.0
-        version: 0.155.0(@flakiness/flakiness-report@0.22.0)
+        specifier: ^1.0.0
+        version: 1.0.0(@flakiness/flakiness-report@0.22.0)
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -202,8 +202,8 @@ packages:
   '@flakiness/flakiness-report@0.22.0':
     resolution: {integrity: sha512-soo8VpTu1/LqFXrwv7HX/YcvKHRN6gjyGZqpOeSa0u5ZrtysuFL4u59FhDhnfKqCC17UQUACPBE8KSM36PiOaw==}
 
-  '@flakiness/sdk@0.155.0':
-    resolution: {integrity: sha512-GNflTXVUe/c8lV3mpMCA7j0IIFE2iTiPf6KQQeQRee/crqph49g6GcwPencm+pqk5G7aSbrbPvnPw8FcZeLVxg==}
+  '@flakiness/sdk@1.0.0':
+    resolution: {integrity: sha512-ENFZrH+DeU6jXbskIrnWPhSKsPFwdE9DhX/s+hqFsY8VTx+CqFp8gwm8g+hTNdomnkeSjaARYfxieULDqlmBCw==}
     peerDependencies:
       '@flakiness/flakiness-report': ^0.22.0
 
@@ -691,7 +691,7 @@ snapshots:
 
   '@flakiness/flakiness-report@0.22.0': {}
 
-  '@flakiness/sdk@0.155.0(@flakiness/flakiness-report@0.22.0)':
+  '@flakiness/sdk@1.0.0(@flakiness/flakiness-report@0.22.0)':
     dependencies:
       '@flakiness/flakiness-report': 0.22.0
       chalk: 5.6.2
