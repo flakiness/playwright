@@ -40,9 +40,9 @@ class NPMPackage {
 }
 
 class Workspace {
-  static async create(rootDir) {
+  static async create(rootDir, packageNames) {
     const workspacePackageJSON = await readJSON(path.join(rootDir, 'package.json'));
-    const packages = (workspacePackageJSON.workspaces ?? []).map(packageName => new NPMPackage(path.join(rootDir, packageName)));
+    const packages = packageNames.map(packageName => new NPMPackage(path.join(rootDir, packageName)));
     return new Workspace(rootDir, packages);
   }
 
@@ -56,39 +56,37 @@ class Workspace {
   }
 
   async version() {
-    const workspacePackageJSON = await readJSON(path.join(this._rootDir, 'package.json'));
+    const workspacePath = path.join(this._rootDir, 'package.json');
+    const workspacePackageJSON = await readJSON(workspacePath);
     return workspacePackageJSON.version;
   }
 
-  async syncDepsVersions() {
-    const maybeWriteJSON = async (jsonPath, json) => {
-      const oldJson = await readJSON(jsonPath);
-      if (JSON.stringify(json) === JSON.stringify(oldJson))
-        return;
-      console.warn('Updated', jsonPath);
-      await writeJSON(jsonPath, json);
-    };
-
-    const workspacePackageJSON = await readJSON(path.join(this._rootDir, 'package.json'));
+  async bumpVersion(minorMajorPatch) {
+    const workspacePath = path.join(this._rootDir, 'package.json');
+    const workspacePackageJSON = await readJSON(workspacePath);
     const version = workspacePackageJSON.version;
+    const tokens = version.split('.').map(x => parseInt(x, 10));
+    if (minorMajorPatch === 'major') {
+      ++tokens[0];
+      tokens[1] = 0;
+      tokens[2] = 0;
+    } else if (minorMajorPatch === 'minor') {
+      ++tokens[1];
+      tokens[2] = 0;
+    } else if (minorMajorPatch === 'patch') {
+      ++tokens[2];
+    } else {
+      throw new Error('unknown command');
+    }
+    const newVersion = tokens.join('.');
+
+    workspacePackageJSON.version = newVersion;
+    await writeJSON(workspacePath, workspacePackageJSON);
 
     for (const pkg of this._packages) {
       // 2. Make sure package's package.jsons are consistent.
-      pkg.packageJSON.version = version;
-      if (!pkg.isPrivate) {
-        pkg.packageJSON.repository = workspacePackageJSON.repository;
-        pkg.packageJSON.homepage = workspacePackageJSON.homepage;
-        pkg.packageJSON.author = workspacePackageJSON.author;
-        pkg.packageJSON.license = workspacePackageJSON.license;
-      }
-
-      for (const otherPackage of this._packages) {
-        if (pkg.packageJSON.dependencies && pkg.packageJSON.dependencies[otherPackage.name])
-          pkg.packageJSON.dependencies[otherPackage.name] = version;
-        if (pkg.packageJSON.devDependencies && pkg.packageJSON.devDependencies[otherPackage.name])
-          pkg.packageJSON.devDependencies[otherPackage.name] = version;
-      }
-      await maybeWriteJSON(pkg.packageJSONPath, pkg.packageJSON);
+      pkg.packageJSON.version = newVersion;
+      await writeJSON(pkg.packageJSONPath, pkg.packageJSON);
     }
   }
 }
@@ -98,13 +96,12 @@ if (versionBump !== 'minor' && versionBump !== 'patch') {
   console.error(`please specify type of version bump: must be either "minor" or "patch"`);
   process.exit(1);
 }
-child_process.execSync(`npm version ${versionBump} --no-git-tag-version`, { cwd: import.meta.dirname });
-const workspace = await Workspace.create(import.meta.dirname);
-await workspace.syncDepsVersions();
+const workspace = await Workspace.create(import.meta.dirname, []);
+await workspace.bumpVersion(versionBump);
 
 // Re-run npm i to make package-lock dirty.
-child_process.execSync('npm i', { cwd: import.meta.dirname });
 const version = await workspace.version();
 child_process.execSync(`git commit -am "chore: mark v${version}"`);
 child_process.execSync(`git tag v${version}`);
 child_process.execSync(`git push --tags upstream main`);
+
