@@ -92,10 +92,11 @@ class Workspace {
 }
 
 const versionBump = process.argv[2];
-if (versionBump !== 'minor' && versionBump !== 'patch') {
-  console.error(`please specify type of version bump: must be either "minor" or "patch"`);
+if (versionBump !== 'major-major-major' && versionBump !== 'minor' && versionBump !== 'patch') {
+  console.error(`please specify type of version bump: must be either "major-major-major", "minor" or "patch"`);
   process.exit(1);
 }
+
 const workspace = await Workspace.create(import.meta.dirname, []);
 await workspace.bumpVersion(versionBump);
 
