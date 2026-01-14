@@ -22,12 +22,13 @@ jobs:
         with:
           node-version: 24
 
-      # Ensure npm 11.5.1 or later is installed
-      - name: Update npm
-        run: npm install -g npm@latest
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Build & Publish
         run: |
-          npm ci
-          npx kubik ./build.mts
-          npm publish
+          pnpm i --frozen-lockfile
+          pnpm exec kubik ./build.mts
+          pnpm publish
