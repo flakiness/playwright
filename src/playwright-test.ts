@@ -1,6 +1,8 @@
 import {
-  CIUtils,
   FlakinessReport as FK,
+} from '@flakiness/flakiness-report';
+import {
+  CIUtils,
   GitWorktree,
   ReportUtils,
   showReport,
