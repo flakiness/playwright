@@ -66,7 +66,7 @@ class Workspace {
     const workspacePackageJSON = await readJSON(workspacePath);
     const version = workspacePackageJSON.version;
     const tokens = version.split('.').map(x => parseInt(x, 10));
-    if (minorMajorPatch === 'major') {
+    if (minorMajorPatch === 'major-major-major') {
       ++tokens[0];
       tokens[1] = 0;
       tokens[2] = 0;
