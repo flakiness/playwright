@@ -40,8 +40,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@flakiness/flakiness-report": "^0.22.0",
-    "@flakiness/sdk": "^1.0.0",
+    "@flakiness/flakiness-report": "^0.25.0",
+    "@flakiness/sdk": "1.1.0-alpha.0",
     "chalk": "^5.6.2"
   }
 }

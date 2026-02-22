@@ -68,6 +68,7 @@ export default class FlakinessReporter implements Reporter {
   private _telemetryTimer?: NodeJS.Timeout;
 
   constructor(private _options: {
+    flakinessProject?: string,
     endpoint?: string,
     token?: string,
     outputFolder?: string,
@@ -300,6 +301,7 @@ export default class FlakinessReporter implements Reporter {
       context.project2environmentIdx.set(this._config.projects[envIdx], envIdx);
 
     const report = ReportUtils.normalizeReport({
+      flakinessProject: this._options.flakinessProject,
       category: 'playwright',
       commitId: worktree.headCommitId(),
       relatedCommitIds: [],

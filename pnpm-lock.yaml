@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@flakiness/flakiness-report':
-        specifier: ^0.22.0
-        version: 0.22.0
+        specifier: ^0.25.0
+        version: 0.25.0(zod@4.3.5)
       '@flakiness/sdk':
-        specifier: ^1.0.0
-        version: 1.0.0(@flakiness/flakiness-report@0.22.0)
+        specifier: 1.1.0-alpha.0
+        version: 1.1.0-alpha.0(@flakiness/flakiness-report@0.25.0(zod@4.3.5))
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -199,13 +199,15 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@flakiness/flakiness-report@0.22.0':
-    resolution: {integrity: sha512-soo8VpTu1/LqFXrwv7HX/YcvKHRN6gjyGZqpOeSa0u5ZrtysuFL4u59FhDhnfKqCC17UQUACPBE8KSM36PiOaw==}
-
-  '@flakiness/sdk@1.0.0':
-    resolution: {integrity: sha512-ENFZrH+DeU6jXbskIrnWPhSKsPFwdE9DhX/s+hqFsY8VTx+CqFp8gwm8g+hTNdomnkeSjaARYfxieULDqlmBCw==}
+  '@flakiness/flakiness-report@0.25.0':
+    resolution: {integrity: sha512-5i0rpwnllHXXpp6Y2BotUXKZ3Iulh4iVlAkHYTf0DQ8ZkBg4p3q5Ie60Z7u15frMTqJ+qhfwTGhXlhRzJD14pg==}
     peerDependencies:
-      '@flakiness/flakiness-report': ^0.22.0
+      zod: ^4.1.12
+
+  '@flakiness/sdk@1.1.0-alpha.0':
+    resolution: {integrity: sha512-5CdjEmnaZ02FHW12m1ONHeTsa+D2u3U4fGu82wNEPBsZ/XppfuH042kNSrX58bw1fW2ZPYH/uLOPTzbpuDoP1A==}
+    peerDependencies:
+      '@flakiness/flakiness-report': ^0.25.0
 
   '@playwright/test@1.57.0':
     resolution: {integrity: sha512-6TyEnHgd6SArQO8UO2OMTxshln3QMWBtPGrOCgs3wVEmQmwyuNtB10IZMfmYDE0riwNR1cu4q+pPcxMVtaG3TA==}
@@ -689,11 +691,13 @@ snapshots:
   '@esbuild/win32-x64@0.27.2':
     optional: true
 
-  '@flakiness/flakiness-report@0.22.0': {}
-
-  '@flakiness/sdk@1.0.0(@flakiness/flakiness-report@0.22.0)':
+  '@flakiness/flakiness-report@0.25.0(zod@4.3.5)':
     dependencies:
-      '@flakiness/flakiness-report': 0.22.0
+      zod: 4.3.5
+
+  '@flakiness/sdk@1.1.0-alpha.0(@flakiness/flakiness-report@0.25.0(zod@4.3.5))':
+    dependencies:
+      '@flakiness/flakiness-report': 0.25.0(zod@4.3.5)
       chalk: 5.6.2
       debug: 4.4.3
       open: 10.2.0
