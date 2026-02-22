@@ -31,4 +31,13 @@ jobs:
         run: |
           pnpm i --frozen-lockfile
           pnpm exec kubik ./build.mts
-          pnpm publish --no-git-checks
+
+          VERSION=${GITHUB_REF_NAME#v}
+
+          if [[ "$VERSION" == *"-"* ]]; then
+            echo "Publishing prerelease to @next"
+            pnpm publish --no-git-checks --tag next
+          else
+            echo "Publishing stable to @latest"
+            pnpm publish --no-git-checks
+          fi
