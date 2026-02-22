@@ -14,6 +14,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [Environment Detection](#environment-detection)
   - [CI Integration](#ci-integration)
 - [Configuration Options](#configuration-options)
+  - [`flakinessProject?: string`](#flakinessproject-string)
   - [`endpoint?: string`](#endpoint-string)
   - [`token?: string`](#token-string)
   - [`outputFolder?: string`](#outputfolder-string)
@@ -62,7 +63,12 @@ npx flakiness show ./flakiness-report
 
 ## Uploading Reports
 
-Reports are automatically uploaded to Flakiness.io in the `onExit()` hook if a valid access token is provided (via `token` option or `FLAKINESS_ACCESS_TOKEN` environment variable).
+Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authentication can be done in two ways:
+
+- **Access token**: Provide a token via the `token` option or the `FLAKINESS_ACCESS_TOKEN` environment variable.
+- **GitHub OIDC**: When running in GitHub Actions, the reporter can authenticate using GitHub's OIDC token — no access token needed. This requires two conditions:
+  1. The `flakinessProject` option must be set to your Flakiness.io project identifier (`org/project`).
+  2. The Flakiness.io project must be bound to the GitHub repository that runs the GitHub Actions workflow.
 
 If upload fails, the report is still available locally in the output folder.
 
@@ -125,6 +131,16 @@ The reporter automatically detects CI environments and includes:
 ## Configuration Options
 
 The reporter accepts the following options:
+
+### `flakinessProject?: string`
+
+The Flakiness.io project identifier in `org/project` format. Used for GitHub OIDC authentication — when set, and the Flakiness.io project is bound to the GitHub repository running the workflow, the reporter authenticates uploads via GitHub Actions OIDC token with no access token required.
+
+```typescript
+reporter: [
+  ['@flakiness/playwright', { flakinessProject: 'my-org/my-project' }]
+]
+```
 
 ### `endpoint?: string`
 
@@ -206,6 +222,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   reporter: [
     ['@flakiness/playwright', {
+      flakinessProject: 'my-org/my-project',
       endpoint: process.env.FLAKINESS_ENDPOINT,
       token: process.env.FLAKINESS_ACCESS_TOKEN,
       outputFolder: './flakiness-report',
