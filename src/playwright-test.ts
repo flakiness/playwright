@@ -259,6 +259,11 @@ export default class FlakinessReporter implements Reporter {
     };
 
     const environmentsMap = createEnvironments(this._config.projects);
+    // No environments? Something clearly went wrong.
+    if (!environmentsMap.size) {
+      warn('Report is NOT generated since no Playwright project was executed.');
+      return;
+    }
     if (this._options.collectBrowserVersions) {
       try {
         // The process.argv[1] is the absolute path of the playwright executable than runs this custom
