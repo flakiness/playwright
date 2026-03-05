@@ -158,8 +158,10 @@ export default class FlakinessReporter implements Reporter {
       status: result.status as FK.TestStatus,
       errors: result.errors && result.errors.length ? result.errors.map(error => this._toFKTestError(context, error)) : undefined,
   
-      stdout: result.stdout ? result.stdout.map(toSTDIOEntry) : undefined,
-      stderr: result.stderr ? result.stderr.map(toSTDIOEntry) : undefined,
+      stdio: [
+        ...(result.stdout ?? []).map((data) => toTimedSTDIOEntry(FK.STREAM_STDOUT, data)),
+        ...(result.stderr ?? []).map((data) => toTimedSTDIOEntry(FK.STREAM_STDERR, data)),
+      ],
   
       steps: result.steps ? result.steps.map(jsonTestStep => this._toFKTestStep(context, jsonTestStep)) : undefined,
   
@@ -358,10 +360,10 @@ To open last Flakiness report, run:
   }
 }
 
-function toSTDIOEntry(data: Buffer | string): FK.STDIOEntry {
+function toTimedSTDIOEntry(stream: FK.Stream, data: Buffer | string): FK.TimedSTDIOEntry {
   if (Buffer.isBuffer(data))
-    return { buffer: data.toString('base64') };
-  return { text: data };
+    return { stream, dts: 0 as FK.DurationMS, buffer: data.toString('base64') };
+  return { stream, dts: 0 as FK.DurationMS, text: data };
 }
 
 

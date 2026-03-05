@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@flakiness/flakiness-report':
-        specifier: ^0.25.0
-        version: 0.25.0(zod@4.3.5)
+        specifier: ^0.27.0
+        version: 0.27.0(zod@4.3.5)
       '@flakiness/sdk':
-        specifier: 2.0.0
-        version: 2.0.0(@flakiness/flakiness-report@0.25.0(zod@4.3.5))
+        specifier: latest
+        version: 2.2.0(@flakiness/flakiness-report@0.27.0(zod@4.3.5))
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -199,15 +199,15 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@flakiness/flakiness-report@0.25.0':
-    resolution: {integrity: sha512-5i0rpwnllHXXpp6Y2BotUXKZ3Iulh4iVlAkHYTf0DQ8ZkBg4p3q5Ie60Z7u15frMTqJ+qhfwTGhXlhRzJD14pg==}
+  '@flakiness/flakiness-report@0.27.0':
+    resolution: {integrity: sha512-01gzgoygx3ql/tjFg2vE5hAod/ZzasnxHqZOQXzXehmIpNQLu/Fe6WoUQoI/QDCBt+jZvujkY98TPC2NabWALQ==}
     peerDependencies:
       zod: ^4.1.12
 
-  '@flakiness/sdk@2.0.0':
-    resolution: {integrity: sha512-h0dk2fdvhK1JWIE7RhuZziv8VejCPMBnhTxpquQLmEmeZ5nYt9P4qB3st0BI4yl9qy3gB47ENNIYvMwfbg6YFQ==}
+  '@flakiness/sdk@2.2.0':
+    resolution: {integrity: sha512-4RKs2TcibxyaDV2wvDLNkLH7N955VXP1Y8/XP9Sinl7AXZXopAyY8/dPxzQpaxbi28n1mqCd219xRJaNYUjWaw==}
     peerDependencies:
-      '@flakiness/flakiness-report': ^0.25.0
+      '@flakiness/flakiness-report': ^0.27.0
 
   '@playwright/test@1.57.0':
     resolution: {integrity: sha512-6TyEnHgd6SArQO8UO2OMTxshln3QMWBtPGrOCgs3wVEmQmwyuNtB10IZMfmYDE0riwNR1cu4q+pPcxMVtaG3TA==}
@@ -691,13 +691,13 @@ snapshots:
   '@esbuild/win32-x64@0.27.2':
     optional: true
 
-  '@flakiness/flakiness-report@0.25.0(zod@4.3.5)':
+  '@flakiness/flakiness-report@0.27.0(zod@4.3.5)':
     dependencies:
       zod: 4.3.5
 
-  '@flakiness/sdk@2.0.0(@flakiness/flakiness-report@0.25.0(zod@4.3.5))':
+  '@flakiness/sdk@2.2.0(@flakiness/flakiness-report@0.27.0(zod@4.3.5))':
     dependencies:
-      '@flakiness/flakiness-report': 0.25.0(zod@4.3.5)
+      '@flakiness/flakiness-report': 0.27.0(zod@4.3.5)
       chalk: 5.6.2
       debug: 4.4.3
       open: 10.2.0
