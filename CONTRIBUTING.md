@@ -10,8 +10,8 @@
 Clone the repo and install dependencies:
 
 ```bash
-git clone https://github.com/flakiness/playwright.git
-cd playwright
+git clone https://github.com/flakiness/playwright.git fk-playwright
+cd fk-playwright
 pnpm install
 ```
 
@@ -22,13 +22,13 @@ This project uses [Kubik](https://github.com/flakiness/kubik) as its build syste
 To build:
 
 ```bash
-./build.mts
+pnpm build
 ```
 
 To watch:
 
 ```bash
-./build.mts -w
+pnpm build -w
 ```
 
 This will bundle the source with esbuild and generate TypeScript declarations.
@@ -47,10 +47,12 @@ To release a new version:
    pnpm version preminor --preid=alpha
    ```
 
-2. Push the tag:
+2. Push the commit and tag:
 
    ```bash
-   git push --tags
+   git push --follow-tags
    ```
+
+3. [Create a GitHub Release](https://github.com/flakiness/playwright/releases/new) for the new tag and publish it.
 
    CI will handle publishing to npm. Pre-releases are published under @next tag.
