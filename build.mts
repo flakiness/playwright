@@ -26,7 +26,7 @@ const { errors } = await esbuild.build({
   platform: 'node',
   target: ['node22'],
   sourcemap: true,
-  bundle: true,
+  bundle: false,
   minify: false,
 });
 
