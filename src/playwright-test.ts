@@ -243,6 +243,7 @@ export default class FlakinessReporter implements Reporter {
     let worktree: GitWorktree;
     try {
       worktree = GitWorktree.create(this._config.rootDir);
+      commitId = worktree.headCommitId();
     } catch (e) {
       warn(`Failed to fetch commit info - is this a git repo?`);
       err(`Report is NOT generated.`);
@@ -308,7 +309,7 @@ export default class FlakinessReporter implements Reporter {
     const report = ReportUtils.normalizeReport({
       flakinessProject: this._options.flakinessProject,
       category: 'playwright',
-      commitId: worktree.headCommitId(),
+      commitId,
       relatedCommitIds: [],
       configPath,
       url: CIUtils.runUrl(),
