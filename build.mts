@@ -4,7 +4,6 @@ import esbuild from 'esbuild';
 import fs from 'fs';
 import { Task } from 'kubik';
 import path from 'path';
-import pkg from './package.json' assert { type: 'json' };
 
 const { __dirname, $ } = Task.init(import.meta, {
   name: 'playwright',
@@ -27,12 +26,6 @@ const { errors } = await esbuild.build({
   platform: 'node',
   target: ['node22'],
   sourcemap: true,
-  // Bundle, but keep un-bundled all public dependencies.
-  // This will bundle any references to devDependencies; in our case,
-  // this is @flakiness/server.
-  external: Object.keys({
-    ...pkg.dependencies,
-  }),
   bundle: true,
   minify: false,
 });
