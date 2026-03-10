@@ -1,5 +1,6 @@
+import { FlakinessReport } from '@flakiness/flakiness-report';
 import { readReport } from '@flakiness/sdk';
-import { expect, TestInfo } from '@playwright/test';
+import { expect, PlaywrightTestConfig, TestInfo } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,7 +30,7 @@ const DEFAULT_FILES: Record<string, string> = {
   }),
 };
 
-export async function generateFlakinessReport(testInfo: TestInfo, files: Record<string, string>, options?: FlakinessReporterOptions) {
+export async function generateFlakinessReport(testInfo: TestInfo, files: Record<string, string>, options?: FlakinessReporterOptions, playwrightConfig?: PlaywrightTestConfig) {
   const targetDir = path.join(
     ARTIFACTS_DIR,
     slugify(testInfo.titlePath.join('-')),
@@ -50,11 +51,13 @@ export async function generateFlakinessReport(testInfo: TestInfo, files: Record<
 
   const allFiles: Record<string, string> = { ...DEFAULT_FILES, ...files };
   // Generate default playwright config.
+  const fullConfig = {
+    ...(playwrightConfig ?? {}),
+    reporter: [[reporterPath, reporterOptions]],
+  };
   allFiles['playwright.config.ts'] = `
     import { defineConfig } from '@playwright/test';
-    export default defineConfig({
-      reporter: [[${JSON.stringify(reporterPath)}, ${JSON.stringify(reporterOptions)}]],
-    });
+    export default defineConfig(${JSON.stringify(fullConfig, null, 2)});
   `;
 
   // Write test files into the tmp folder.
@@ -65,16 +68,20 @@ export async function generateFlakinessReport(testInfo: TestInfo, files: Record<
   }
 
   // Initialize a git repo and commit all files.
-  execSync('git init', { cwd: targetDir });
-  execSync('git add .', { cwd: targetDir });
+  execSync('git init', { cwd: targetDir, stdio: 'pipe' });
+  execSync('git add .', { cwd: targetDir, stdio: 'pipe' });
   execSync('git -c user.email=john@example.com -c user.name=john -c commit.gpgsign=false commit -m staging', {
     cwd: targetDir,
+    stdio: 'pipe',
   });
 
   // Run playwright test in the temp directory.
   // Use NODE_PATH so test files in the temp dir can resolve @playwright/test.
   const playwrightBin = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'playwright');
-  const env = { ...process.env, NODE_PATH: path.join(PROJECT_ROOT, 'node_modules') };
+  const env = {
+    ...process.env,
+    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules')
+  };
   delete (env as any)['CI'];
   let stdout = '';
   let stderr = '';
@@ -112,4 +119,8 @@ function slugify(text: string) {
 export function assertCount<T>(elements: T[] | undefined, count: number): T[] {
   expect(elements?.length).toBe(count);
   return elements!;
+}
+
+export function assertStatus(status: FlakinessReport.TestStatus | undefined, expected: FlakinessReport.TestStatus) {
+  expect(status ?? 'passed').toBe(expected);
 }
