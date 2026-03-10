@@ -1,3 +1,5 @@
+[![Tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fflakiness.io%2Fapi%2Fbadge%3Finput%3D%257B%2522badgeToken%2522%253A%2522badge-5VBxhivD3vj6ItXSEL9heM%2522%257D)](https://flakiness.io/flakiness/playwright)
+
 # Flakiness.io Playwright Reporter
 
 A custom Playwright test reporter that generates Flakiness Reports from your Playwright test runs. The reporter automatically converts Playwright test results into the standardized [Flakiness JSON format](https://github.com/flakiness/flakiness-report), capturing test outcomes, attachments, system utilization, and environment information.

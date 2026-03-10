@@ -4,4 +4,7 @@ export default defineConfig({
   testDir: './tests',
   globalSetup: './tests/global-setup.ts',
   timeout: 30000,
+  reporter: [['@flakiness/playwright', {
+    flakinessProject: 'flakiness/playwright',
+  }]],
 });
