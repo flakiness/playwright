@@ -35,4 +35,4 @@ jobs:
       - run: git config --global init.defaultBranch main
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm test:run
+      - run: pnpm test
