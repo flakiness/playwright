@@ -36,3 +36,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
+      - name: Upload Flakiness report artifact (for Pull Requests from forks)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flakiness-report
+          path: flakiness-report/
+          retention-days: 1
