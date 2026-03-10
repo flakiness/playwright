@@ -37,7 +37,7 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - name: Upload Flakiness report artifact (for Pull Requests from forks)
-        if: always()
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
         uses: actions/upload-artifact@v4
         with:
           name: flakiness-report-${{ github.job }}-${{ strategy.job-index }}
