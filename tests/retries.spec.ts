@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { assertCount, generateFlakinessReport } from './utils';
 
 test('should handle retries', async ({}, testInfo) => {
@@ -8,13 +8,8 @@ test('should handle retries', async ({}, testInfo) => {
       import fs from 'fs';
       import path from 'path';
 
-      test('retryretry', async () => {
-        const counterFile = path.join(process.cwd(), '.attempt-counter');
-        let count = 0;
-        try { count = parseInt(fs.readFileSync(counterFile, 'utf-8')); } catch {}
-        count++;
-        fs.writeFileSync(counterFile, String(count));
-        expect(count).toBeGreaterThan(2);
+      test('retryretry', async ({}, testInfo) => {
+        expect(testInfo.retry).toBeGreaterThanOrEqual(2);
       });
 
       test('noretry', async () => { });
@@ -22,6 +17,7 @@ test('should handle retries', async ({}, testInfo) => {
   }, {}, {
     retries: 2,
   });
+
   const [suite] = assertCount(report.suites, 1);
   const [testWithRetries, testNoRetry] = assertCount(suite.tests, 2);
   expect(testWithRetries.title).toBe('retryretry');

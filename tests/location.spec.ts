@@ -15,9 +15,19 @@ test('should report locations', async ({}, testInfo) => {
   const [suite1] = assertCount(file.suites, 1);
   const [test1] = assertCount(suite1.tests, 1);
 
-  expect(file.location?.file).toBe('foo/file-1.spec.ts');
-  expect(suite1.location?.file).toBe('foo/file-1.spec.ts');
-  expect(test1.location?.file).toBe('foo/file-1.spec.ts');
-  expect(suite1.location?.line).toBeGreaterThan(0);
-  expect(test1.location?.line).toBeGreaterThan(0);
+  expect(file.location).toEqual({
+    file: 'foo/file-1.spec.ts',
+    line: 0,
+    column: 0,
+  });
+  expect(suite1.location).toEqual({
+    file: 'foo/file-1.spec.ts',
+    line: 4,
+    column: 12,
+  });
+  expect(test1.location).toEqual({
+    file: 'foo/file-1.spec.ts',
+    line: 5,
+    column: 13,
+  });
 });

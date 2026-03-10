@@ -18,8 +18,8 @@ test('should capture test errors', async ({}, testInfo) => {
   const [error] = assertCount(attempt.errors, 1);
   expect(error.message).toContain('expected');
   expect(error.location).toEqual({
-    line: expect.any(Number),
-    column: expect.any(Number),
+    line: 5,
+    column: 19,
     file: 'file-1.spec.ts',
   });
 });
