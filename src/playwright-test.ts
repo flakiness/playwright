@@ -55,6 +55,7 @@ export default class FlakinessReporter implements Reporter {
   private _config?: FullConfig;
   private _rootSuite?: Suite;
   private _results = new Map<TestCase, Set<TestResult>>();
+  private _stdioEntries = new Map<TestResult, Array<{ data: Buffer | string, stream: 'stdout' | 'stderr', time: number }>>();
   private _unattributedErrors: TestError[] = [];
 
   private _cpuUtilization = new CPUUtilization({ precision: 10 });
@@ -102,6 +103,24 @@ export default class FlakinessReporter implements Reporter {
   }
 
   onTestBegin(test: TestCase) {
+  }
+
+  onStdOut(chunk: string | Buffer, test: TestCase | void, result: TestResult | void) {
+    this._onStdio(chunk, 'stdout', result);
+  }
+
+  onStdErr(chunk: string | Buffer, test: TestCase | void, result: TestResult | void) {
+    this._onStdio(chunk, 'stderr', result);
+  }
+
+  private _onStdio(chunk: string | Buffer, stream: 'stdout' | 'stderr', result: TestResult | void) {
+    if (!result) return;
+    let entries = this._stdioEntries.get(result);
+    if (!entries) {
+      entries = [];
+      this._stdioEntries.set(result, entries);
+    }
+    entries.push({ data: chunk, stream, time: Date.now() });
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
@@ -159,8 +178,7 @@ export default class FlakinessReporter implements Reporter {
       status: result.status as FK.TestStatus,
       errors: result.errors && result.errors.length ? result.errors.map(error => this._toFKTestError(context, error)) : undefined,
   
-      stdout: result.stdout ? result.stdout.map(toSTDIOEntry) : undefined,
-      stderr: result.stderr ? result.stderr.map(toSTDIOEntry) : undefined,
+      stdio: this._buildStdio(result),
   
       steps: result.steps ? result.steps.map(jsonTestStep => this._toFKTestStep(context, jsonTestStep)) : undefined,
   
@@ -192,6 +210,24 @@ export default class FlakinessReporter implements Reporter {
     }));
 
     return attempt;
+  }
+
+  private _buildStdio(result: TestResult): FK.TimedSTDIOEntry[] | undefined {
+    const rawEntries = this._stdioEntries.get(result);
+    if (!rawEntries?.length)
+      return undefined;
+    const stdio: FK.TimedSTDIOEntry[] = [];
+    let ts = +result.startTime;
+    for (const entry of rawEntries) {
+      stdio.push({
+        ...toDataPayload(entry.data),
+        stream: entry.stream === 'stderr' ? FK.STREAM_STDERR : undefined,
+        dts: Math.max(0, entry.time - ts) as FK.DurationMS,
+      });
+      ts = entry.time;
+    }
+    this._stdioEntries.delete(result);
+    return stdio;
   }
 
   private _toFKTestStep(context: ProcessingContext, pwStep: TestStep): FK.TestStep {
@@ -367,7 +403,7 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
-function toSTDIOEntry(data: Buffer | string): FK.STDIOEntry {
+function toDataPayload(data: Buffer | string): { text: string } | { buffer: string } {
   if (Buffer.isBuffer(data))
     return { buffer: data.toString('base64') };
   return { text: data };
