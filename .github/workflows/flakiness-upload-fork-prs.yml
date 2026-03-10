@@ -24,7 +24,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-        run: gh run download "$RUN_ID" --pattern 'flakiness-report-*' --dir .
+        run: gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --pattern 'flakiness-report-*' --dir .
 
       - name: Upload to Flakiness.io
         run: find . -path '*/flakiness-report-*/report.json' -exec flakiness upload {} \;
