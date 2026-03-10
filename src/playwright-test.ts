@@ -74,8 +74,9 @@ export default class FlakinessReporter implements Reporter {
     outputFolder?: string,
     open?: OpenMode,
     collectBrowserVersions?: boolean,
+    disableUpload?: boolean,
   } = {}) {
-    this._outputFolder = path.join(process.cwd(), this._options.outputFolder ?? process.env.FLAKINESS_OUTPUT_DIR ?? 'flakiness-report');
+    this._outputFolder = path.resolve(process.cwd(), this._options.outputFolder ?? process.env.FLAKINESS_OUTPUT_DIR ?? 'flakiness-report');
 
     this._sampleSystem = this._sampleSystem.bind(this);
     this._sampleSystem();
@@ -335,10 +336,13 @@ export default class FlakinessReporter implements Reporter {
     if (!this._report)
       return;
 
-    await uploadReport(this._report, this._attachments, {
-      flakinessAccessToken: this._options.token,
-      flakinessEndpoint: this._options.endpoint,
-    });
+    const disableUpload = !!this._options.disableUpload || !!process.env.FLAKINESS_DISABLE_UPLOAD;
+    if (!disableUpload) {
+      await uploadReport(this._report, this._attachments, {
+        flakinessAccessToken: this._options.token,
+        flakinessEndpoint: this._options.endpoint,
+      });
+    }
 
     const openMode = this._options.open ?? 'on-failure';
     // Playwright v1.57+ correctly sets up `process.stdin.isTTY`

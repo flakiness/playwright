@@ -18,7 +18,8 @@
   "types": "./types/index.d.ts",
   "scripts": {
     "build": "kubik build.mts",
-    "watch": "kubik build.mts -w"
+    "watch": "kubik build.mts -w",
+    "test": "playwright test"
   },
   "keywords": [
     "playwright",
