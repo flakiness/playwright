@@ -336,7 +336,7 @@ export default class FlakinessReporter implements Reporter {
     if (!this._report)
       return;
 
-    const disableUpload = !!this._options.disableUpload || !!process.env.FLAKINESS_DISABLE_UPLOAD;
+    const disableUpload = this._options.disableUpload ?? envBool('FLAKINESS_DISABLE_UPLOAD');
     if (!disableUpload) {
       await uploadReport(this._report, this._attachments, {
         flakinessAccessToken: this._options.token,
@@ -361,6 +361,10 @@ To open last Flakiness report, run:
       `);
     }
   }
+}
+
+function envBool(name: string): boolean {
+  return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
 function toSTDIOEntry(data: Buffer | string): FK.STDIOEntry {

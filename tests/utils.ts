@@ -32,7 +32,6 @@ const DEFAULT_FILES: Record<string, string> = {
 export async function generateFlakinessReport(testInfo: TestInfo, files: Record<string, string>, options?: FlakinessReporterOptions) {
   const targetDir = path.join(
     ARTIFACTS_DIR,
-    path.relative(import.meta.dirname, testInfo.file),
     slugify(testInfo.titlePath.join('-')),
   );
   // Clean up any previous run and create fresh directory.
@@ -50,15 +49,13 @@ export async function generateFlakinessReport(testInfo: TestInfo, files: Record<
   };
 
   const allFiles: Record<string, string> = { ...DEFAULT_FILES, ...files };
-  // Generate default playwright config if not provided.
-  if (!allFiles['playwright.config.ts']) {
-    allFiles['playwright.config.ts'] = `
-      import { defineConfig } from '@playwright/test';
-      export default defineConfig({
-        reporter: [[${JSON.stringify(reporterPath)}, ${JSON.stringify(reporterOptions)}]],
-      });
-    `;
-  }
+  // Generate default playwright config.
+  allFiles['playwright.config.ts'] = `
+    import { defineConfig } from '@playwright/test';
+    export default defineConfig({
+      reporter: [[${JSON.stringify(reporterPath)}, ${JSON.stringify(reporterOptions)}]],
+    });
+  `;
 
   // Write test files into the tmp folder.
   for (const [filePath, content] of Object.entries(allFiles)) {
@@ -78,7 +75,7 @@ export async function generateFlakinessReport(testInfo: TestInfo, files: Record<
   // Use NODE_PATH so test files in the temp dir can resolve @playwright/test.
   const playwrightBin = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'playwright');
   const env = { ...process.env, NODE_PATH: path.join(PROJECT_ROOT, 'node_modules') };
-  delete env.CI;
+  delete (env as any)['CI'];
   let stdout = '';
   let stderr = '';
   try {
