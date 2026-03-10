@@ -20,6 +20,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [`outputFolder?: string`](#outputfolder-string)
   - [`open?: 'always' | 'never' | 'on-failure'`](#open-always--never--on-failure)
   - [`collectBrowserVersions?: boolean`](#collectbrowserversions-boolean)
+  - [`disableUpload?: boolean`](#disableupload-boolean)
 - [Environment Variables](#environment-variables)
 - [Example Configuration](#example-configuration)
 
@@ -202,6 +203,16 @@ reporter: [
 ]
 ```
 
+### `disableUpload?: boolean`
+
+When set to `true`, the reporter will skip uploading the report to Flakiness.io. The report is still generated locally in the output folder. This is useful for local development or testing the reporter itself. Can also be enabled via the `FLAKINESS_DISABLE_UPLOAD` environment variable.
+
+```typescript
+reporter: [
+  ['@flakiness/playwright', { disableUpload: true }]
+]
+```
+
 ## Environment Variables
 
 The reporter respects the following environment variables:
@@ -209,6 +220,7 @@ The reporter respects the following environment variables:
 - **`FLAKINESS_ACCESS_TOKEN`**: Access token for Flakiness.io uploads (equivalent to `token` option)
 - **`FLAKINESS_ENDPOINT`**: Custom Flakiness.io endpoint URL (equivalent to `endpoint` option)
 - **`FLAKINESS_OUTPUT_DIR`**: Output directory for reports (equivalent to `outputFolder` option)
+- **`FLAKINESS_DISABLE_UPLOAD`**: When set, disables report upload (equivalent to `disableUpload` option)
 
 
 
@@ -228,6 +240,7 @@ export default defineConfig({
       outputFolder: './flakiness-report',
       open: 'on-failure',
       collectBrowserVersions: false,
+      disableUpload: false,
     }]
   ],
   // ... rest of your config
