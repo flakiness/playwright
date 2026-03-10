@@ -40,6 +40,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: flakiness-report
+          name: flakiness-report-${{ github.job }}-${{ strategy.job-index }}
           path: flakiness-report/
           retention-days: 1

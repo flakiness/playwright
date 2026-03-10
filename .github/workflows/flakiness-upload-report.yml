@@ -17,11 +17,11 @@ jobs:
       - name: Install Flakiness CLI
         run: curl -LsSf https://cli.flakiness.io/install.sh | sh
 
-      - name: Download flakiness-report artifact
+      - name: Download flakiness-report artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-        run: gh run download "$RUN_ID" --name flakiness-report --dir .
+        run: gh run download "$RUN_ID" --pattern 'flakiness-report-*' --dir .
 
       - name: Upload to Flakiness.io
-        run: flakiness upload ./flakiness-report/report.json
+        run: find . -path '*/flakiness-report-*/report.json' -exec flakiness upload {} \;
