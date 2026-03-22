@@ -21,12 +21,15 @@ import type {
   Suite, TestCase, TestError, TestResult,
   TestStep
 } from '@playwright/test/reporter';
-import chalk from 'chalk';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import * as nodeUtil from 'node:util';
 
-const warn = (txt: string) => console.warn(chalk.yellow(`[flakiness.io] ${txt}`));
-const err = (txt: string) => console.error(chalk.red(`[flakiness.io] ${txt}`));
+type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
+
+const styleText = (format: StyleTextFormat, text: string) => nodeUtil.styleText?.(format, text) ?? text;
+const warn = (txt: string) => console.warn(styleText('yellow', `[flakiness.io] ${txt}`));
+const err = (txt: string) => console.error(styleText('red', `[flakiness.io] ${txt}`));
 const log = (txt: string) => console.log(`[flakiness.io] ${txt}`);
 
 function parseDurationMS(value: number) {
@@ -357,7 +360,7 @@ export default class FlakinessReporter implements Reporter {
       console.log(`
 To open last Flakiness report, run:
 
-  ${chalk.cyan(`npx flakiness show ${folder}`)}
+  ${styleText('cyan', `npx flakiness show ${folder}`)}
       `);
     }
   }
