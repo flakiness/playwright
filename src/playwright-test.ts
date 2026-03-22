@@ -6,6 +6,7 @@ import {
   GitWorktree,
   ReportUtils,
   showReport,
+  showReportCommand,
   CPUUtilization,
   RAMUtilization,
   uploadReport,
@@ -355,12 +356,11 @@ export default class FlakinessReporter implements Reporter {
     if (shouldOpen) {
       await showReport(this._outputFolder);
     } else {
-      const defaultOutputFolder = path.join(process.cwd(), 'flakiness-report');
-      const folder = defaultOutputFolder === this._outputFolder ? '' : path.relative(process.cwd(), this._outputFolder);
+      const command = showReportCommand(this._outputFolder);
       console.log(`
 To open last Flakiness report, run:
 
-  ${styleText('cyan', `npx flakiness show ${folder}`)}
+  ${styleText('cyan', command)}
       `);
     }
   }
