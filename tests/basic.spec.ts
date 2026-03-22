@@ -29,5 +29,5 @@ test('should report proper top-level properties', async ({}, testInfo) => {
   expect(report.ram?.length).toBeGreaterThan(0);
 
   // A message on how to show flakiness report should be shown
-  expect(log.stdout).toContain('npx flakiness show');
+  expect(log.stdout).toContain('flakiness show');
 });
