@@ -248,4 +248,3 @@ export default defineConfig({
   // ... rest of your config
 });
 ```
-
