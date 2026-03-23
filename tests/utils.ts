@@ -15,6 +15,7 @@ const PROJECT_ROOT = path.resolve(import.meta.dirname, '..');
 
 type FlakinessReporterOptions = {
   flakinessProject?: string,
+  title?: string,
   endpoint?: string,
   token?: string,
   outputFolder?: string,
@@ -83,6 +84,7 @@ export async function generateFlakinessReport(testInfo: TestInfo, files: Record<
     NODE_PATH: path.join(PROJECT_ROOT, 'node_modules')
   };
   delete (env as any)['CI'];
+  delete (env as any)['GITHUB_WORKFLOW'];
   let stdout = '';
   let stderr = '';
   try {
