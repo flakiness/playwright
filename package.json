@@ -33,7 +33,7 @@
   "author": "Degu Labs, Inc",
   "license": "MIT",
   "devDependencies": {
-    "@flakiness/playwright": "^1.5.0",
+    "@flakiness/playwright": "^1.6.0",
     "@playwright/test": "^1.57.0",
     "@types/node": "^25.0.3",
     "esbuild": "^0.27.2",
