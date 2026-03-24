@@ -312,10 +312,9 @@ export default class FlakinessReporter implements Reporter {
     for (let envIdx = 0; envIdx < environments.length; ++envIdx)
       context.project2environmentIdx.set(this._config.projects[envIdx], envIdx);
 
-    const title = this._options.title ?? process.env.FLAKINESS_TITLE ?? CIUtils.runTitle();
     const report = ReportUtils.normalizeReport({
       flakinessProject: this._options.flakinessProject,
-      title,
+      title: this._options.title ?? process.env.FLAKINESS_TITLE,
       category: 'playwright',
       commitId,
       relatedCommitIds: [],
