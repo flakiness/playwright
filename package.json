@@ -43,6 +43,6 @@
   },
   "dependencies": {
     "@flakiness/flakiness-report": "^0.29.0",
-    "@flakiness/sdk": "2.5.0"
+    "@flakiness/sdk": "^2.6.0"
   }
 }

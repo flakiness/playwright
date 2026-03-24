@@ -148,7 +148,7 @@ reporter: [
 
 ### `title?: string`
 
-Optional human-readable report title. Typically used to name a CI run, matrix shard, or other execution group. Defaults to the `FLAKINESS_TITLE` environment variable if set, or is auto-detected from the CI environment (e.g. GitHub Actions workflow name).
+Optional human-readable report title. Typically used to name a CI run, matrix shard, or other execution group. Defaults to the `FLAKINESS_TITLE` environment variable if set, or empty otherwise.
 
 ```typescript
 reporter: [
