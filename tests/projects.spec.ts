@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { assertCount, generateFlakinessReport } from './utils';
+import { expect, test } from '@playwright/test';
+import { assertCount, generateFlakinessReport } from './utils.js';
 
 test('should capture multiple projects', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {

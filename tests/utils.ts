@@ -1,5 +1,5 @@
 import { FlakinessReport } from '@flakiness/flakiness-report';
-import { readReport } from '@flakiness/sdk';
+import { readReport, ReportUtils } from '@flakiness/sdk';
 import { expect, PlaywrightTestConfig, TestInfo } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -31,7 +31,20 @@ const DEFAULT_FILES: Record<string, string> = {
   }),
 };
 
-export async function generateFlakinessReport(testInfo: TestInfo, files: Record<string, string>, options?: FlakinessReporterOptions, playwrightConfig?: PlaywrightTestConfig) {
+export async function generateFlakinessReport(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    options?: FlakinessReporterOptions,
+    playwrightConfig?: PlaywrightTestConfig
+  ): Promise<{
+    log: {
+        stdout: string;
+        stderr: string;
+    };
+    report: FlakinessReport.Report;
+    attachments: ReportUtils.FileAttachment[];
+    missingAttachments: FlakinessReport.Attachment[];
+  }> {
   const targetDir = path.join(
     ARTIFACTS_DIR,
     slugify(testInfo.titlePath.join('-')),
@@ -124,4 +137,9 @@ export function assertCount<T>(elements: T[] | undefined, count: number): T[] {
 
 export function assertStatus(status: FlakinessReport.TestStatus | undefined, expected: FlakinessReport.TestStatus) {
   expect(status ?? 'passed').toBe(expected);
+}
+
+export function assertStdioEntry(entry: FlakinessReport.TimedSTDIOEntry, text: string, expected: FlakinessReport.Stream) {
+  expect(entry.stream ?? FlakinessReport.STREAM_STDOUT).toBe(expected);
+  expect((entry as any).text).toBe(text);
 }

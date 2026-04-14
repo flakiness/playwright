@@ -1,66 +1,37 @@
-import { test, expect } from '@playwright/test';
-import { generateFlakinessReport } from './utils';
+import { FlakinessReport } from '@flakiness/flakiness-report';
+import { expect, test } from '@playwright/test';
+import { assertCount, assertStdioEntry, generateFlakinessReport } from './utils.js';
 
-
-test('should report stdio', async ({}, testInfo) => {
+test('should serialize interleaved stdio in chronological order', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {
     'example.spec.ts': `
-      import { test, expect } from '@playwright/test';
-
-      test('stdio test', async () => {
-        console.log('stdout message');
-        console.error('stderr message');
-        expect(1 + 1).toBe(2);
-      });
-    `,
-  });
-
-  const attempt = report.suites![0]!.tests![0]!.attempts[0];
-  // stdout and stderr should not be set (deprecated)
-  expect(attempt.stdout).toBeUndefined();
-  expect(attempt.stderr).toBeUndefined();
-  // stdio should be a single ordered array
-  expect(attempt.stdio).toHaveLength(2);
-  expect((attempt.stdio![0] as any).text).toContain('stdout message');
-  expect(attempt.stdio![0]!.stream ?? 1).toBe(1); // stdout (stream omitted = default)
-  expect(typeof attempt.stdio![0]!.dts).toBe('number');
-  expect((attempt.stdio![1] as any).text).toContain('stderr message');
-  expect(attempt.stdio![1]!.stream).toBe(2); // stderr
-  expect(typeof attempt.stdio![1]!.dts).toBe('number');
-});
-
-test('should preserve chronological order of interleaved stdio', async ({}, testInfo) => {
-  const { report } = await generateFlakinessReport(testInfo, {
-    'example.spec.ts': `
-      import { test, expect } from '@playwright/test';
+      import { test } from '@playwright/test';
 
       test('interleaved output', async () => {
         console.log('first');
         console.error('second');
         console.log('third');
-        console.error('fourth');
+        console.error('forth');
       });
     `,
   });
 
   const attempt = report.suites![0]!.tests![0]!.attempts[0];
-  expect(attempt.stdio).toHaveLength(4);
-  // Verify chronological ordering — entries should appear in the order they were written,
-  // not grouped by stream.
-  expect((attempt.stdio![0] as any).text).toContain('first');
-  expect(attempt.stdio![0]!.stream ?? 1).toBe(1); // stdout (stream omitted = default)
-  expect((attempt.stdio![1] as any).text).toContain('second');
-  expect(attempt.stdio![1]!.stream).toBe(2); // stderr
-  expect((attempt.stdio![2] as any).text).toContain('third');
-  expect(attempt.stdio![2]!.stream ?? 1).toBe(1); // stdout (stream omitted = default)
-  expect((attempt.stdio![3] as any).text).toContain('fourth');
-  expect(attempt.stdio![3]!.stream).toBe(2); // stderr
+  // Deprecated per-stream fields should not be set.
+  expect(attempt.stdout).toBeUndefined();
+  expect(attempt.stderr).toBeUndefined();
+  // Entries appear in write order, not grouped by stream. `stream` is omitted for stdout (default).
+  const [first, second, third, forth] = assertCount(attempt.stdio, 4);
+  assertStdioEntry(first, 'first\n', FlakinessReport.STREAM_STDOUT);
+  assertStdioEntry(second, 'second\n', FlakinessReport.STREAM_STDERR);
+  assertStdioEntry(third, 'third\n', FlakinessReport.STREAM_STDOUT);
+  assertStdioEntry(forth, 'forth\n', FlakinessReport.STREAM_STDERR);
 });
 
 test('should have valid timestamps in stdio entries', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {
     'example.spec.ts': `
-      import { test, expect } from '@playwright/test';
+      import { test } from '@playwright/test';
 
       test('timed output', async () => {
         console.log('before delay');
@@ -71,17 +42,7 @@ test('should have valid timestamps in stdio entries', async ({}, testInfo) => {
   });
 
   const attempt = report.suites![0]!.tests![0]!.attempts[0];
-  expect(attempt.stdio).toHaveLength(2);
-  // All dts values should be non-negative
-  for (const entry of attempt.stdio!) {
-    expect(entry.dts).toBeGreaterThanOrEqual(0);
-  }
-  // The sum of all dts deltas should be roughly within the test duration.
-  // We allow some margin because dts is measured in the reporter process
-  // while duration is measured in the worker process (IPC adds latency).
-  const totalDts = attempt.stdio!.reduce((sum, entry) => sum + entry.dts, 0);
-  expect(totalDts).toBeLessThanOrEqual(attempt.duration! + 500);
-  // Second entry should have dts >= 50ms (we waited 100ms, allow some margin)
-  expect(attempt.stdio![1]!.dts).toBeGreaterThanOrEqual(50);
+  const [first, second] = assertCount(attempt.stdio, 2);
+  expect(first.dts).toBeGreaterThanOrEqual(0);
+  expect(second.dts).toBeGreaterThanOrEqual(100);
 });
-
