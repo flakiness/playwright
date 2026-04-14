@@ -42,7 +42,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@flakiness/flakiness-report": "^0.29.0",
-    "@flakiness/sdk": "^2.6.0"
+    "@flakiness/flakiness-report": "^0.31.0",
+    "@flakiness/sdk": "^2.7.0"
   }
 }
