@@ -23,6 +23,21 @@ test('should capture multiple projects', async ({}, testInfo) => {
   expect(report.environments.some(env => env.name === 'browser')).toBeTruthy();
 });
 
+test('should propagate FK_ENV_* variables into environment metadata', async ({}, testInfo) => {
+  const { report } = await generateFlakinessReport(testInfo, {
+    'file.spec.ts': `
+      import { test } from '@playwright/test';
+      test('test', async () => { });
+    `,
+  }, {}, {}, {
+    FK_ENV_FOO: 'bar',
+  });
+  expect(report.environments.length).toBe(1);
+  const [env] = report.environments;
+  expect(env.metadata?.foo).toBe('bar');
+  expect(env.metadata).not.toHaveProperty('actualWorkers');
+});
+
 test('should have a reasonable name for default project', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {
     'file.spec.ts': `

@@ -363,8 +363,8 @@ export default class FlakinessReporter implements Reporter {
           const browser = await browserType.launch({ channel, headless });
           const version = browser.version();
           await browser.close();
-          env.userSuppliedData ??= {};
-          env.userSuppliedData['browser'] = (channel ?? browserName).toLowerCase().trim() + ' ' + version;
+          env.metadata ??= {};
+          env.metadata['browser'] = (channel ?? browserName).toLowerCase().trim() + ' ' + version;
         }
       } catch (e) {
         err(`Failed to resolve browser version: ${e}`);
@@ -436,7 +436,6 @@ function envBool(name: string): boolean {
 
 type GenericProject = {
   name: string,
-  metadata: { [key: string]: any },
 }
 
 function createEnvironments<T extends GenericProject>(projects: T[]): Map<T, FK.Environment> {
@@ -453,13 +452,7 @@ function createEnvironments<T extends GenericProject>(projects: T[]): Map<T, FK.
       name = `${defaultName}-${i}`;
     uniqueNames.add(defaultName);
 
-    const metadata = structuredClone(project.metadata);
-    delete metadata.gitDiff;
-
-    result.set(project, ReportUtils.createEnvironment({
-      name,
-      metadata,
-    }));
+    result.set(project, ReportUtils.createEnvironment({ name }));
   }
   return result;
 }
