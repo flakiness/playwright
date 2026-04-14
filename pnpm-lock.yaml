@@ -9,18 +9,15 @@ importers:
   .:
     dependencies:
       '@flakiness/flakiness-report':
-        specifier: ^0.27.0
-        version: 0.27.0(zod@4.3.5)
+        specifier: ^0.31.0
+        version: 0.31.0(zod@4.3.5)
       '@flakiness/sdk':
-        specifier: 2.2.1
-        version: 2.2.1(@flakiness/flakiness-report@0.27.0(zod@4.3.5))
-      chalk:
-        specifier: ^5.6.2
-        version: 5.6.2
+        specifier: ^2.7.0
+        version: 2.7.0(@flakiness/flakiness-report@0.31.0(zod@4.3.5))
     devDependencies:
       '@flakiness/playwright':
-        specifier: ^1.3.2
-        version: 1.3.2(zod@4.3.5)
+        specifier: ^1.6.0
+        version: 1.6.0(zod@4.3.5)
       '@playwright/test':
         specifier: ^1.57.0
         version: 1.57.0
@@ -202,18 +199,24 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@flakiness/flakiness-report@0.27.0':
-    resolution: {integrity: sha512-01gzgoygx3ql/tjFg2vE5hAod/ZzasnxHqZOQXzXehmIpNQLu/Fe6WoUQoI/QDCBt+jZvujkY98TPC2NabWALQ==}
+  '@flakiness/flakiness-report@0.29.0':
+    resolution: {integrity: sha512-yqv+rk0OVrfvnxRv2UhTkxd+j4w8jmXTQeh7g1EdiC2GqnLps8vPtnhr3k+HwBCeqrexYY8ynDcsBagqYP1a1Q==}
     peerDependencies:
       zod: ^4.1.12
 
-  '@flakiness/playwright@1.3.2':
-    resolution: {integrity: sha512-+sAg56fxLWV5Duc9TTbEASnP6Gkn1Y7EjaB9IoK6FZDAo+kqiMi+ezLaBJErXKqCBCqkf+fV1aZKsQuG1WXi+A==}
-
-  '@flakiness/sdk@2.2.1':
-    resolution: {integrity: sha512-DRo6ygar8JW23sj2Sa1I+oww9HMGRVV9XDAgjJQ+I9YUurVZgdxG/BxmJcU+dbyVFMrQo+FrdFEHEwQ1ZtZfmA==}
+  '@flakiness/flakiness-report@0.31.0':
+    resolution: {integrity: sha512-on2B5Hzf2v5jqcnK1aL6G52bU2AhIIOm+qq0kX9inLflDGm4FzRDAjFsdnv0QsmUtukvK89VLlpNndNZ6q7+Bw==}
     peerDependencies:
-      '@flakiness/flakiness-report': ^0.27.0
+      zod: ^4.1.12
+
+  '@flakiness/playwright@1.6.0':
+    resolution: {integrity: sha512-lvP8SCTLWaDsK2SelNCJQ5OpsOmrtHkiGqHFY0yFDhZfOmFK7s6nb4rddIWoLcJfAyv0ZTjugaO/EFdao+sErA==}
+
+  '@flakiness/sdk@2.7.0':
+    resolution: {integrity: sha512-MCvd9qbSDwGaIguJCvLoklUI89ZDwXoQPwtZGnzgGbXqvHzPHprwbMaAVmjK0vBRpwvpSXuYZw0zvYItmpkAxA==}
+    engines: {node: ^20.17.0 || >=22.9.0}
+    peerDependencies:
+      '@flakiness/flakiness-report': '>=0.26.0 <1.0.0'
 
   '@playwright/test@1.57.0':
     resolution: {integrity: sha512-6TyEnHgd6SArQO8UO2OMTxshln3QMWBtPGrOCgs3wVEmQmwyuNtB10IZMfmYDE0riwNR1cu4q+pPcxMVtaG3TA==}
@@ -418,6 +421,10 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
+  isexe@4.0.0:
+    resolution: {integrity: sha512-FFUtZMpoZ8RqHS3XeXEmHWLA4thH+ZxCv2lOiPIn1Xc7CxrqhWzNSDzD+/chS/zbYezmiwWLdQC09JdQKmthOw==}
+    engines: {node: '>=20'}
+
   js-sha256@0.11.1:
     resolution: {integrity: sha512-o6WSo/LUvY2uC4j7mO50a2ms7E/EAdbP0swigLV+nzHKTTaYnaLIWJ02VdXrsJX0vGedDESQnLsOekr94ryfjg==}
 
@@ -578,6 +585,11 @@ packages:
     engines: {node: '>= 8'}
     hasBin: true
 
+  which@6.0.1:
+    resolution: {integrity: sha512-oGLe46MIrCRqX7ytPUf66EAYvdeMIZYn3WaocqqKZAxrBpkqHfL/qvTyJ/bTk5+AqHCjXmrv3CEWgy368zhRUg==}
+    engines: {node: ^20.17.0 || >=22.9.0}
+    hasBin: true
+
   widest-line@5.0.0:
     resolution: {integrity: sha512-c9bZp7b5YtRj2wOe6dlj32MK+Bx/M/d+9VB2SHM1OtsUHR0aV0tdP6DWh/iMt0kWi1t5g1Iudu6hQRNd1A4PVA==}
     engines: {node: '>=18'}
@@ -697,26 +709,40 @@ snapshots:
   '@esbuild/win32-x64@0.27.2':
     optional: true
 
-  '@flakiness/flakiness-report@0.27.0(zod@4.3.5)':
+  '@flakiness/flakiness-report@0.29.0(zod@4.3.5)':
     dependencies:
       zod: 4.3.5
 
-  '@flakiness/playwright@1.3.2(zod@4.3.5)':
+  '@flakiness/flakiness-report@0.31.0(zod@4.3.5)':
     dependencies:
-      '@flakiness/flakiness-report': 0.27.0(zod@4.3.5)
-      '@flakiness/sdk': 2.2.1(@flakiness/flakiness-report@0.27.0(zod@4.3.5))
-      chalk: 5.6.2
+      zod: 4.3.5
+
+  '@flakiness/playwright@1.6.0(zod@4.3.5)':
+    dependencies:
+      '@flakiness/flakiness-report': 0.29.0(zod@4.3.5)
+      '@flakiness/sdk': 2.7.0(@flakiness/flakiness-report@0.29.0(zod@4.3.5))
     transitivePeerDependencies:
       - supports-color
       - zod
 
-  '@flakiness/sdk@2.2.1(@flakiness/flakiness-report@0.27.0(zod@4.3.5))':
+  '@flakiness/sdk@2.7.0(@flakiness/flakiness-report@0.29.0(zod@4.3.5))':
     dependencies:
-      '@flakiness/flakiness-report': 0.27.0(zod@4.3.5)
-      chalk: 5.6.2
+      '@flakiness/flakiness-report': 0.29.0(zod@4.3.5)
       debug: 4.4.3
       open: 10.2.0
       stable-hash: 0.0.6
+      which: 6.0.1
+      zod: 4.3.5
+    transitivePeerDependencies:
+      - supports-color
+
+  '@flakiness/sdk@2.7.0(@flakiness/flakiness-report@0.31.0(zod@4.3.5))':
+    dependencies:
+      '@flakiness/flakiness-report': 0.31.0(zod@4.3.5)
+      debug: 4.4.3
+      open: 10.2.0
+      stable-hash: 0.0.6
+      which: 6.0.1
       zod: 4.3.5
     transitivePeerDependencies:
       - supports-color
@@ -925,6 +951,8 @@ snapshots:
 
   isexe@2.0.0: {}
 
+  isexe@4.0.0: {}
+
   js-sha256@0.11.1: {}
 
   js-tokens@4.0.0: {}
@@ -1069,6 +1097,10 @@ snapshots:
   which@2.0.2:
     dependencies:
       isexe: 2.0.0
+
+  which@6.0.1:
+    dependencies:
+      isexe: 4.0.0
 
   widest-line@5.0.0:
     dependencies:

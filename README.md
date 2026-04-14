@@ -17,6 +17,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [CI Integration](#ci-integration)
 - [Configuration Options](#configuration-options)
   - [`flakinessProject?: string`](#flakinessproject-string)
+  - [`title?: string`](#title-string)
   - [`endpoint?: string`](#endpoint-string)
   - [`token?: string`](#token-string)
   - [`outputFolder?: string`](#outputfolder-string)
@@ -145,6 +146,16 @@ reporter: [
 ]
 ```
 
+### `title?: string`
+
+Optional human-readable report title. Typically used to name a CI run, matrix shard, or other execution group. Defaults to the `FLAKINESS_TITLE` environment variable if set, or empty otherwise.
+
+```typescript
+reporter: [
+  ['@flakiness/playwright', { title: 'Shard 1/4 — Linux Chrome' }]
+]
+```
+
 ### `endpoint?: string`
 
 Custom Flakiness.io endpoint URL for uploading reports. Defaults to the `FLAKINESS_ENDPOINT` environment variable, or `https://flakiness.io` if not set.
@@ -222,6 +233,7 @@ The reporter respects the following environment variables:
 - **`FLAKINESS_ACCESS_TOKEN`**: Access token for Flakiness.io uploads (equivalent to `token` option)
 - **`FLAKINESS_ENDPOINT`**: Custom Flakiness.io endpoint URL (equivalent to `endpoint` option)
 - **`FLAKINESS_OUTPUT_DIR`**: Output directory for reports (equivalent to `outputFolder` option)
+- **`FLAKINESS_TITLE`**: Report title (equivalent to `title` option)
 - **`FLAKINESS_DISABLE_UPLOAD`**: When set, disables report upload (equivalent to `disableUpload` option)
 
 
@@ -237,6 +249,7 @@ export default defineConfig({
   reporter: [
     ['@flakiness/playwright', {
       flakinessProject: 'my-org/my-project',
+      title: 'My Test Run',
       endpoint: process.env.FLAKINESS_ENDPOINT,
       token: process.env.FLAKINESS_ACCESS_TOKEN,
       outputFolder: './flakiness-report',
@@ -248,4 +261,3 @@ export default defineConfig({
   // ... rest of your config
 });
 ```
-

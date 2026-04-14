@@ -15,6 +15,7 @@ const PROJECT_ROOT = path.resolve(import.meta.dirname, '..');
 
 type FlakinessReporterOptions = {
   flakinessProject?: string,
+  title?: string,
   endpoint?: string,
   token?: string,
   outputFolder?: string,
