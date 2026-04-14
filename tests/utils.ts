@@ -35,7 +35,8 @@ export async function generateFlakinessReport(
     testInfo: TestInfo,
     files: Record<string, string>,
     options?: FlakinessReporterOptions,
-    playwrightConfig?: PlaywrightTestConfig
+    playwrightConfig?: PlaywrightTestConfig,
+    extraEnv?: Record<string, string>,
   ): Promise<{
     log: {
         stdout: string;
@@ -94,7 +95,8 @@ export async function generateFlakinessReport(
   const playwrightBin = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'playwright');
   const env = {
     ...process.env,
-    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules')
+    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
+    ...(extraEnv ?? {}),
   };
   delete (env as any)['CI'];
   let stdout = '';
