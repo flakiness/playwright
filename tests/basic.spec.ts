@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { generateFlakinessReport } from './utils';
+import { expect, test } from '@playwright/test';
+import { generateFlakinessReport } from './utils.js';
 
 test('should report proper top-level properties', async ({}, testInfo) => {
   const starttime = Date.now();

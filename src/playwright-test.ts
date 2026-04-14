@@ -63,11 +63,17 @@ type PwAttachment = TestResult['attachments'][number];
 
 type OpenMode = 'always' | 'never' | 'on-failure';
 
+type StdIOEntry = {
+  data: Buffer | string,
+  stream: FK.Stream,
+  time: number,
+}
+
 export default class FlakinessReporter implements Reporter {
   private _config?: FullConfig;
   private _rootSuite?: Suite;
   private _results = new Map<TestCase, Set<TestResult>>();
-  private _stdioEntries = new Map<TestResult, Array<{ data: Buffer | string, stream: 'stdout' | 'stderr', time: number }>>();
+  private _stdioEntries = new Map<TestResult, StdIOEntry[]>();
   private _unattributedErrors: TestError[] = [];
 
   private _cpuUtilization = new CPUUtilization({ precision: 10 });
@@ -133,7 +139,11 @@ export default class FlakinessReporter implements Reporter {
       entries = [];
       this._stdioEntries.set(result, entries);
     }
-    entries.push({ data: chunk, stream, time: Date.now() });
+    entries.push({
+      data: chunk,
+      stream: stream === 'stderr' ? FK.STREAM_STDERR : FK.STREAM_STDOUT,
+      time: Date.now()
+    });
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
@@ -176,7 +186,6 @@ export default class FlakinessReporter implements Reporter {
   }
 
   private async _toFKRunAttempt(context: ProcessingContext, pwTest: TestCase, result: TestResult): Promise<FK.RunAttempt> {
-    const attachments: FK.Attachment[] = [];
     const attempt: FK.RunAttempt = {
       timeout: parseDurationMS(pwTest.timeout),
       annotations: pwTest.annotations.map(annotation => ({
@@ -190,7 +199,6 @@ export default class FlakinessReporter implements Reporter {
       parallelIndex: result.parallelIndex,
       status: result.status as FK.TestStatus,
       errors: result.errors && result.errors.length ? result.errors.map(error => this._toFKTestError(context, error)) : undefined,
-  
       stdio: this._buildStdio(result),
       steps: result.steps ? await Promise.all(result.steps.map(jsonTestStep => this._toFKTestStep(context, jsonTestStep))) : undefined,
 
@@ -210,12 +218,12 @@ export default class FlakinessReporter implements Reporter {
     const stdio: FK.TimedSTDIOEntry[] = [];
     let ts = +result.startTime;
     for (const entry of rawEntries) {
-      stdio.push({
-        ...toDataPayload(entry.data),
-        stream: entry.stream === 'stderr' ? FK.STREAM_STDERR : undefined,
-        dts: Math.max(0, entry.time - ts) as FK.DurationMS,
-      });
+      const dts = Math.max(0, entry.time - ts) as FK.DurationMS;
       ts = entry.time;
+      if (Buffer.isBuffer(entry.data))
+        stdio.push({ buffer: entry.data.toString('base64'), dts, stream: entry.stream });
+      else
+        stdio.push({ text: entry.data, dts, stream: entry.stream });
     }
     this._stdioEntries.delete(result);
     return stdio;
@@ -425,13 +433,6 @@ To open last Flakiness report, run:
 function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
-
-function toDataPayload(data: Buffer | string): { text: string } | { buffer: string } {
-  if (Buffer.isBuffer(data))
-    return { buffer: data.toString('base64') };
-  return { text: data };
-}
-
 
 type GenericProject = {
   name: string,

@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-import { assertCount, assertStatus, generateFlakinessReport } from './utils';
+import { expect, test } from '@playwright/test';
+import { assertCount, assertStatus, generateFlakinessReport } from './utils.js';
 
 test('should handle tests in skipped describe blocks', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {

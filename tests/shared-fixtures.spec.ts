@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { assertCount, generateFlakinessReport } from './utils';
+import { assertCount, generateFlakinessReport } from './utils.js';
 
 test('should report tests from shared fixtures imported by multiple spec files', async ({}, testInfo) => {
   const { report, log } = await generateFlakinessReport(testInfo, {

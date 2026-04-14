@@ -1,6 +1,6 @@
 import { ReportUtils } from '@flakiness/sdk';
-import { test, expect } from '@playwright/test';
-import { assertCount, generateFlakinessReport } from './utils';
+import { expect, test } from '@playwright/test';
+import { assertCount, generateFlakinessReport } from './utils.js';
 
 test('should properly report hierarchy', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {
