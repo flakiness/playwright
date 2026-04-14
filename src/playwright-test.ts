@@ -3,12 +3,12 @@ import {
 } from '@flakiness/flakiness-report';
 import {
   CIUtils,
+  CPUUtilization,
   GitWorktree,
+  RAMUtilization,
   ReportUtils,
   showReport,
   showReportCommand,
-  CPUUtilization,
-  RAMUtilization,
   uploadReport,
   writeReport
 } from '@flakiness/sdk';
@@ -52,6 +52,15 @@ type ProcessingContext = {
   attachments: Map<string, ReportUtils.Attachment>,
   unaccessibleAttachmentPaths: string[],
 }
+
+
+type PwAttachment = TestResult['attachments'][number];
+
+// Cache FK attachments keyed by the PW Attachment object.
+// This is required since Playwright Test reports the same attachment objects in both
+// test attachment list AND in test steps, IF they're attributed to some step.
+// This caching allows us to save on I/O operations.
+const gCachedFkAttachments = new WeakMap<PwAttachment, Promise<FK.Attachment|undefined>>();
 
 type OpenMode = 'always' | 'never' | 'on-failure';
 
@@ -163,58 +172,68 @@ export default class FlakinessReporter implements Reporter {
       parallelIndex: result.parallelIndex,
       status: result.status as FK.TestStatus,
       errors: result.errors && result.errors.length ? result.errors.map(error => this._toFKTestError(context, error)) : undefined,
-  
+
       stdout: result.stdout ? result.stdout.map(toSTDIOEntry) : undefined,
       stderr: result.stderr ? result.stderr.map(toSTDIOEntry) : undefined,
-  
-      steps: result.steps ? result.steps.map(jsonTestStep => this._toFKTestStep(context, jsonTestStep)) : undefined,
-  
+
+      steps: result.steps ? await Promise.all(result.steps.map(jsonTestStep => this._toFKTestStep(context, jsonTestStep))) : undefined,
+
       startTimestamp: +result.startTime as FK.UnixTimestampMS,
       duration: +result.duration as FK.DurationMS,
-  
-      attachments,
-    };
 
-    await Promise.all((result.attachments ?? []).map(async jsonAttachment => {
-      // If we cannot access attachment path, then we should skip this attachment, and add it to the "unaccessible" array.
-      if (jsonAttachment.path && !(await existsAsync(jsonAttachment.path))) {
-        context.unaccessibleAttachmentPaths.push(jsonAttachment.path);
-        return;
-      }
-      let attachment: ReportUtils.Attachment;
-      if (jsonAttachment.path)
-        attachment = await ReportUtils.createFileAttachment(jsonAttachment.contentType, jsonAttachment.path);
-      else if (jsonAttachment.body)
-        attachment = await ReportUtils.createDataAttachment(jsonAttachment.contentType, jsonAttachment.body);
-      else
-        return;
-      context.attachments.set(attachment.id, attachment);
-      attachments.push({
-        id: attachment.id,
-        name: jsonAttachment.name,
-        contentType: jsonAttachment.contentType,
-      });
-    }));
+      attachments: await this._toFKAttachments(context, result.attachments),
+    };
 
     return attempt;
   }
 
-  private _toFKTestStep(context: ProcessingContext, pwStep: TestStep): FK.TestStep {
+  private async _toFKAttachments(context: ProcessingContext, pwAttachments: PwAttachment[]): Promise<FK.Attachment[]|undefined> {
+    const all = await Promise.all(pwAttachments.map(psAttachment => this._toFKAttachment(context, psAttachment)));
+    const filtered = all.filter(attachment => attachment !== undefined);
+    return filtered.length ? filtered : undefined;
+  }
+
+  private async _toFKAttachment(context: ProcessingContext, pwAttachment: PwAttachment): Promise<FK.Attachment | undefined> {
+    let result = gCachedFkAttachments.get(pwAttachment);
+    if (!result) {
+      result = (async () => {
+        // If we cannot access attachment path, then we should skip this attachment, and add it to the "unaccessible" array.
+        if (pwAttachment.path && !(await existsAsync(pwAttachment.path))) {
+          context.unaccessibleAttachmentPaths.push(pwAttachment.path);
+          return;
+        }
+        let attachment: ReportUtils.Attachment;
+        if (pwAttachment.path)
+          attachment = await ReportUtils.createFileAttachment(pwAttachment.contentType, pwAttachment.path);
+        else if (pwAttachment.body)
+          attachment = await ReportUtils.createDataAttachment(pwAttachment.contentType, pwAttachment.body);
+        else
+          return;
+        context.attachments.set(attachment.id, attachment);
+        return {
+          id: attachment.id,
+          name: pwAttachment.name,
+          contentType: pwAttachment.contentType,
+        };
+      })();
+      gCachedFkAttachments.set(pwAttachment, result);
+    }
+    return await result;
+  }
+
+  private async _toFKTestStep(context: ProcessingContext, pwStep: TestStep): Promise<FK.TestStep> {
     const step: FK.TestStep = {
       // NOTE: jsonStep.duration was -1 in some playwright versions
       duration: parseDurationMS(Math.max(pwStep.duration, 0)),
       title: pwStep.title,
       location: pwStep.location ? this._createLocation(context, pwStep.location) : undefined,
+      attachments: await this._toFKAttachments(context, pwStep.attachments),
     };
-
-    if (pwStep.location) {
-      const resolvedPath = path.resolve(pwStep.location.file);
-    }
 
     if (pwStep.error)
       step.error = this._toFKTestError(context, pwStep.error);
     if (pwStep.steps)
-      step.steps = pwStep.steps.map(childJSONStep => this._toFKTestStep(context, childJSONStep));
+      step.steps = await Promise.all(pwStep.steps.map(childJSONStep => this._toFKTestStep(context, childJSONStep)));
     return step;
   }
 
