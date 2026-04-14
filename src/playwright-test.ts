@@ -50,17 +50,16 @@ type ProcessingContext = {
   project2environmentIdx: Map<FullProject, number>,
   worktree: GitWorktree,
   attachments: Map<string, ReportUtils.Attachment>,
+  // Cache FK attachments keyed by the PW Attachment object.
+  // This is required since Playwright Test reports the same attachment objects in both
+  // test attachment list AND in test steps, IF they're attributed to some step.
+  // This caching allows us to save on I/O operations.
+  attachmentsCache: Map<PwAttachment, Promise<FK.Attachment|undefined>>,
   unaccessibleAttachmentPaths: string[],
 }
 
 
 type PwAttachment = TestResult['attachments'][number];
-
-// Cache FK attachments keyed by the PW Attachment object.
-// This is required since Playwright Test reports the same attachment objects in both
-// test attachment list AND in test steps, IF they're attributed to some step.
-// This caching allows us to save on I/O operations.
-const gCachedFkAttachments = new WeakMap<PwAttachment, Promise<FK.Attachment|undefined>>();
 
 type OpenMode = 'always' | 'never' | 'on-failure';
 
@@ -194,7 +193,7 @@ export default class FlakinessReporter implements Reporter {
   }
 
   private async _toFKAttachment(context: ProcessingContext, pwAttachment: PwAttachment): Promise<FK.Attachment | undefined> {
-    let result = gCachedFkAttachments.get(pwAttachment);
+    let result = context.attachmentsCache.get(pwAttachment);
     if (!result) {
       result = (async () => {
         // If we cannot access attachment path, then we should skip this attachment, and add it to the "unaccessible" array.
@@ -216,7 +215,7 @@ export default class FlakinessReporter implements Reporter {
           contentType: pwAttachment.contentType,
         };
       })();
-      gCachedFkAttachments.set(pwAttachment, result);
+      context.attachmentsCache.set(pwAttachment, result);
     }
     return await result;
   }
@@ -281,6 +280,7 @@ export default class FlakinessReporter implements Reporter {
       project2environmentIdx: new Map(),
       worktree,
       attachments: new Map(),
+      attachmentsCache: new Map(),
       unaccessibleAttachmentPaths: [],
     };
 
