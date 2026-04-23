@@ -23,6 +23,45 @@ test('should capture multiple projects', async ({}, testInfo) => {
   expect(report.environments.some(env => env.name === 'browser')).toBeTruthy();
 });
 
+test('should only emit environments for projects that ran', async ({}, testInfo) => {
+  const { report } = await generateFlakinessReport(testInfo, {
+    'file.spec.ts': `
+      import { test } from '@playwright/test';
+      test('test', async () => { });
+    `,
+  }, {}, {
+    projects: [
+      { name: 'alpha' },
+      { name: 'beta' },
+      { name: 'gamma' },
+    ],
+  }, {}, ['--project=beta']);
+
+  expect(report.environments.map(e => e.name)).toEqual(['beta']);
+
+  const [file] = assertCount(report.suites, 1);
+  const [t] = assertCount(file.tests, 1);
+  const [attempt] = assertCount(t.attempts, 1);
+  expect(attempt.environmentIdx ?? 0).toBe(0);
+});
+
+test('should fall back to at least one environment when no project ran', async ({}, testInfo) => {
+  const { report } = await generateFlakinessReport(testInfo, {
+    'file.spec.ts': `
+      import { test } from '@playwright/test';
+      // no tests
+    `,
+  }, {}, {
+    projects: [
+      { name: 'alpha' },
+      { name: 'beta' },
+    ],
+  });
+
+  expect(report.environments.length).toBe(1);
+  expect(report.environments[0].name).toBe('alpha');
+});
+
 test('should propagate FK_ENV_* variables into environment metadata', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {
     'file.spec.ts': `
