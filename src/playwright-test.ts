@@ -306,16 +306,13 @@ export default class FlakinessReporter implements Reporter {
     this._ramUtilization.sample();
     if (!this._config || !this._rootSuite)
       throw new Error('ERROR: failed to resolve config');
-    let commitId: FK.CommitId;
-    let worktree: GitWorktree;
-    try {
-      worktree = GitWorktree.create(this._config.rootDir);
-      commitId = worktree.headCommitId();
-    } catch (e) {
-      warn(`Failed to fetch commit info - is this a git repo?`);
+    const worktreeResult = GitWorktree.initialize(this._config.rootDir);
+    if (!worktreeResult.ok) {
+      warn(`Failed to fetch commit info - is this a git repo? (${worktreeResult.error})`);
       err(`Report is NOT generated.`);
       return;
     }
+    const { commitId, worktree } = worktreeResult;
 
     const configPath = this._config.configFile ? worktree.gitPath(this._config.configFile) : undefined;
 
