@@ -45,7 +45,7 @@ test('should only emit environments for projects that ran', async ({}, testInfo)
   expect(attempt.environmentIdx ?? 0).toBe(0);
 });
 
-test('should fall back to at least one environment when no project ran', async ({}, testInfo) => {
+test('should generate report with no environments when no project ran', async ({}, testInfo) => {
   const { report } = await generateFlakinessReport(testInfo, {
     'file.spec.ts': `
       import { test } from '@playwright/test';
@@ -58,8 +58,7 @@ test('should fall back to at least one environment when no project ran', async (
     ],
   });
 
-  expect(report.environments.length).toBe(1);
-  expect(report.environments[0].name).toBe('alpha');
+  expect(report.environments.length).toBe(0);
 });
 
 test('should propagate FK_ENV_* variables into environment metadata', async ({}, testInfo) => {

@@ -31,5 +31,5 @@ test('should generate report when tests have syntax errors', async ({}, testInfo
     `,
   });
   expect(report.unattributedErrors?.length).toBeGreaterThanOrEqual(1);
-  assertCount(report.environments, 1);
+  assertCount(report.environments, 0);
 });

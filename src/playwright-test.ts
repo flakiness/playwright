@@ -328,13 +328,8 @@ export default class FlakinessReporter implements Reporter {
     };
 
     // The root suite's direct children are project suites — one per project that actually ran.
-    // Fall back to the first configured project so the report always has at least one environment.
     const projects = this._rootSuite.suites.map(s => s.project()).filter(p => !!p);
     const environmentsMap = createEnvironments(projects);
-    if (!environmentsMap.size) {
-      warn('Report is NOT generated since no Playwright project was configured.');
-      return;
-    }
     if (this._options.collectBrowserVersions) {
       try {
         // The process.argv[1] is the absolute path of the playwright executable than runs this custom
