@@ -327,12 +327,9 @@ export default class FlakinessReporter implements Reporter {
       unaccessibleAttachmentPaths: [],
     };
 
-    const environmentsMap = createEnvironments(this._config.projects);
-    // No environments? Something clearly went wrong.
-    if (!environmentsMap.size) {
-      warn('Report is NOT generated since no Playwright project was executed.');
-      return;
-    }
+    // The root suite's direct children are project suites — one per project that actually ran.
+    const projects = this._rootSuite.suites.map(s => s.project()).filter(p => !!p);
+    const environmentsMap = createEnvironments(projects);
     if (this._options.collectBrowserVersions) {
       try {
         // The process.argv[1] is the absolute path of the playwright executable than runs this custom
@@ -371,8 +368,10 @@ export default class FlakinessReporter implements Reporter {
       }
     }
     const environments = [...environmentsMap.values()];
-    for (let envIdx = 0; envIdx < environments.length; ++envIdx)
-      context.project2environmentIdx.set(this._config.projects[envIdx], envIdx);
+    
+    Array.from(environmentsMap.keys()).forEach((project, envIdx) => {
+      context.project2environmentIdx.set(project, envIdx);
+    });
 
     const report = ReportUtils.normalizeReport({
       flakinessProject: this._options.flakinessProject,

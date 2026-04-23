@@ -37,6 +37,7 @@ export async function generateFlakinessReport(
     options?: FlakinessReporterOptions,
     playwrightConfig?: PlaywrightTestConfig,
     extraEnv?: Record<string, string>,
+    cliArgs: string[] = [],
   ): Promise<{
     log: {
         stdout: string;
@@ -102,7 +103,7 @@ export async function generateFlakinessReport(
   let stdout = '';
   let stderr = '';
   try {
-    const result = execSync(`"${playwrightBin}" test`, {
+    const result = execSync(`"${playwrightBin}" test ${cliArgs.join(' ')}`, {
       cwd: targetDir,
       stdio: 'pipe',
       env,
