@@ -25,6 +25,7 @@ import type {
 import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
+import pkg from '../package.json' with { type: 'json' };
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -378,6 +379,9 @@ export default class FlakinessReporter implements Reporter {
       relatedCommitIds: [],
       configPath,
       url: CIUtils.runUrl(),
+      generatedBy: { name: pkg.name, version: pkg.version },
+      testRunner: this._config.version ? { name: '@playwright/test', version: this._config.version } : undefined,
+      runtime: ReportUtils.detectRuntime(),
       environments,
       suites: await this._toFKSuites(context, this._rootSuite),
       unattributedErrors: this._unattributedErrors.map(e => this._toFKTestError(context, e)),
