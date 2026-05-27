@@ -2,7 +2,6 @@ import {
   FlakinessReport as FK,
 } from '@flakiness/flakiness-report';
 import {
-  CIUtils,
   CPUUtilization,
   GitWorktree,
   RAMUtilization,
@@ -12,20 +11,17 @@ import {
   uploadReport,
   writeReport
 } from '@flakiness/sdk';
-import type { BrowserType } from '@playwright/test';
 import type {
   FullConfig,
   FullProject,
   FullResult,
-  Location,
   Reporter,
-  Suite, TestCase, TestError, TestResult,
-  TestStep
+  Suite, TestCase, TestError, TestResult
 } from '@playwright/test/reporter';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
-import pkg from '../package.json' with { type: 'json' };
+import { buildReport } from './reportBuilder.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -153,154 +149,6 @@ export default class FlakinessReporter implements Reporter {
     this._results.set(test, results);
   }
 
-  private async _toFKSuites(context: ProcessingContext, pwSuite: Suite): Promise<FK.Suite[]> {
-    const location = pwSuite.location;
-    // Location should be missing only for root and project suites. Either way, we skip
-    // the suite if there's no location.
-    if (pwSuite.type === 'root' || pwSuite.type === 'project' || !location)
-      return (await Promise.all(pwSuite.suites.map(suite => this._toFKSuites(context, suite)))).flat();
-
-    let type: FK.SuiteType = 'suite';
-    if (pwSuite.type === 'file')
-      type = 'file';
-    else if (pwSuite.type === 'describe' && !pwSuite.title)
-      type = 'anonymous suite';
-  
-    return [{
-      type,
-      title: pwSuite.title,
-      location: this._createLocation(context, location),
-      suites: (await Promise.all(pwSuite.suites.map(suite => this._toFKSuites(context, suite)))).flat(),
-      tests: await Promise.all(pwSuite.tests.map(test => this._toFKTest(context, test))),
-    } as FK.Suite];
-  }
-
-  private async _toFKTest(context: ProcessingContext, pwTest: TestCase): Promise<FK.Test> {
-    return {
-      title: pwTest.title,
-      // Playwright Test tags must start with '@' so we cut it off.
-      tags: pwTest.tags.map(tag => tag.startsWith('@') ? tag.substring(1) : tag),
-      location: this._createLocation(context, pwTest.location),
-      // de-duplication of tests will happen later, so here we will have all attempts.
-      attempts: await Promise.all(Array.from(this._results.get(pwTest) ?? new Set<TestResult>()).map(result => this._toFKRunAttempt(context, pwTest, result))),
-    } as FK.Test;
-  }
-
-  private async _toFKRunAttempt(context: ProcessingContext, pwTest: TestCase, result: TestResult): Promise<FK.RunAttempt> {
-    const attempt: FK.RunAttempt = {
-      timeout: parseDurationMS(pwTest.timeout),
-      annotations: pwTest.annotations.map(annotation => ({
-        type: annotation.type,
-        description: annotation.description,
-        location: annotation.location ? this._createLocation(context, annotation.location) : undefined,
-      })),
-      environmentIdx: context.project2environmentIdx.get(pwTest.parent.project()!)!,
-      expectedStatus: pwTest.expectedStatus,
-
-      parallelIndex: result.parallelIndex,
-      status: result.status as FK.TestStatus,
-      errors: result.errors && result.errors.length ? result.errors.map(error => this._toFKTestError(context, error)) : undefined,
-      stdio: this._buildStdio(result),
-      steps: result.steps ? await Promise.all(result.steps.map(jsonTestStep => this._toFKTestStep(context, jsonTestStep))) : undefined,
-
-      startTimestamp: +result.startTime as FK.UnixTimestampMS,
-      duration: +result.duration as FK.DurationMS,
-
-      attachments: await this._toFKAttachments(context, result.attachments),
-    };
-
-    return attempt;
-  }
-
-  private _buildStdio(result: TestResult): FK.TimedSTDIOEntry[] | undefined {
-    const rawEntries = this._stdioEntries.get(result);
-    if (!rawEntries?.length)
-      return undefined;
-    const stdio: FK.TimedSTDIOEntry[] = [];
-    let ts = +result.startTime;
-    for (const entry of rawEntries) {
-      const dts = Math.max(0, entry.time - ts) as FK.DurationMS;
-      ts = entry.time;
-      if (Buffer.isBuffer(entry.data))
-        stdio.push({ buffer: entry.data.toString('base64'), dts, stream: entry.stream });
-      else
-        stdio.push({ text: entry.data, dts, stream: entry.stream });
-    }
-    this._stdioEntries.delete(result);
-    return stdio;
-  }
-
-  private async _toFKAttachments(context: ProcessingContext, pwAttachments: PwAttachment[]): Promise<FK.Attachment[]|undefined> {
-    const all = await Promise.all(pwAttachments.map(psAttachment => this._toFKAttachment(context, psAttachment)));
-    const filtered = all.filter(attachment => attachment !== undefined);
-    return filtered.length ? filtered : undefined;
-  }
-
-  private async _toFKAttachment(context: ProcessingContext, pwAttachment: PwAttachment): Promise<FK.Attachment | undefined> {
-    let result = context.attachmentsCache.get(pwAttachment);
-    if (!result) {
-      result = (async () => {
-        // If we cannot access attachment path, then we should skip this attachment, and add it to the "unaccessible" array.
-        if (pwAttachment.path && !(await existsAsync(pwAttachment.path))) {
-          context.unaccessibleAttachmentPaths.push(pwAttachment.path);
-          return;
-        }
-        let attachment: ReportUtils.Attachment;
-        if (pwAttachment.path)
-          attachment = await ReportUtils.createFileAttachment(pwAttachment.contentType, pwAttachment.path);
-        else if (pwAttachment.body)
-          attachment = await ReportUtils.createDataAttachment(pwAttachment.contentType, pwAttachment.body);
-        else
-          return;
-        context.attachments.set(attachment.id, attachment);
-        return {
-          id: attachment.id,
-          name: pwAttachment.name,
-          contentType: pwAttachment.contentType,
-        };
-      })();
-      context.attachmentsCache.set(pwAttachment, result);
-    }
-    return await result;
-  }
-
-  private async _toFKTestStep(context: ProcessingContext, pwStep: TestStep): Promise<FK.TestStep> {
-    const step: FK.TestStep = {
-      // NOTE: jsonStep.duration was -1 in some playwright versions
-      duration: parseDurationMS(Math.max(pwStep.duration, 0)),
-      title: pwStep.title,
-      location: pwStep.location ? this._createLocation(context, pwStep.location) : undefined,
-      attachments: await this._toFKAttachments(context, pwStep.attachments),
-    };
-
-    if (pwStep.error)
-      step.error = this._toFKTestError(context, pwStep.error);
-    if (pwStep.steps)
-      step.steps = await Promise.all(pwStep.steps.map(childJSONStep => this._toFKTestStep(context, childJSONStep)));
-    return step;
-  }
-
-  private _createLocation(
-    context: ProcessingContext,
-    pwLocation: Location,
-  ): FK.Location {
-    return {
-      file: context.worktree.gitPath(path.resolve(pwLocation.file)),
-      line: pwLocation.line as FK.Number1Based,
-      column: pwLocation.column as FK.Number1Based,
-    };
-  }
-
-  private _toFKTestError(context: ProcessingContext, pwError: TestError) {
-    return {
-      location: pwError.location ? this._createLocation(context, pwError.location) : undefined,
-      message: ReportUtils.stripAnsi(pwError.message ?? '').split('\n')[0],
-      snippet: pwError.snippet,
-      stack: pwError.stack,
-      value: pwError.value,
-    }
-  }
-
   async onEnd(result: FullResult) {
     clearTimeout(this._telemetryTimer);
     this._cpuUtilization.sample();
@@ -315,88 +163,28 @@ export default class FlakinessReporter implements Reporter {
     }
     const { commitId, worktree } = worktreeResult;
 
-    const configPath = this._config.configFile ? worktree.gitPath(this._config.configFile) : undefined;
-
-    const context: ProcessingContext = {
-      project2environmentIdx: new Map(),
-      worktree,
-      attachments: new Map(),
-      attachmentsCache: new Map(),
-      unaccessibleAttachmentPaths: [],
-    };
-
-    // The root suite's direct children are project suites — one per project that actually ran.
-    const projects = this._rootSuite.suites.map(s => s.project()).filter(p => !!p);
-    const environmentsMap = createEnvironments(projects);
-    if (this._options.collectBrowserVersions) {
-      try {
-        // The process.argv[1] is the absolute path of the playwright executable than runs this custom
-        // reporter. It also runs tests.
-        // Unfortunately, we're not given the Playwright instance in the playwright api;
-        // as a result, jump through a few hoops to get the instance.
-        // 
-        // 1. Resolve process.argv[1] to absolute path. This is a symlink that points to some file
-        //    inside the @playwright/test node module.
-        // 2. Go up until we reach the "test" directory.
-        // 3. Playwright's main import is the 'index.js' file.
-        let playwrightPath = fs.realpathSync(process.argv[1]);
-        while (path.basename(playwrightPath) !== 'test')
-          playwrightPath = path.dirname(playwrightPath);
-        const module = await import(path.join(playwrightPath, 'index.js'));
-
-        for (const [project, env] of environmentsMap) {
-          const { browserName = 'chromium', channel, headless } = project.use;
-  
-          let browserType: BrowserType;
-          switch (browserName) {
-            case 'chromium': browserType = module.default.chromium; break;
-            case 'firefox': browserType = module.default.firefox; break;
-            case 'webkit': browserType = module.default.webkit; break;
-            default: throw new Error(`Unsupported browser: ${browserName}`);
-          }
-  
-          const browser = await browserType.launch({ channel, headless });
-          const version = browser.version();
-          await browser.close();
-          env.metadata ??= {};
-          env.metadata['browser'] = (channel ?? browserName).toLowerCase().trim() + ' ' + version;
-        }
-      } catch (e) {
-        err(`Failed to resolve browser version: ${e}`);
-      }
-    }
-    const environments = [...environmentsMap.values()];
-    
-    Array.from(environmentsMap.keys()).forEach((project, envIdx) => {
-      context.project2environmentIdx.set(project, envIdx);
-    });
-
-    const report = ReportUtils.normalizeReport({
-      flakinessProject: this._options.flakinessProject,
-      title: this._options.title ?? process.env.FLAKINESS_TITLE,
-      category: 'playwright',
+    const { report, attachments, unaccessibleAttachmentPaths } = await buildReport({
       commitId,
-      relatedCommitIds: [],
-      configPath,
-      url: CIUtils.runUrl(),
-      generatedBy: { name: pkg.name, version: pkg.version },
-      testRunner: this._config.version ? { name: '@playwright/test', version: this._config.version } : undefined,
-      runtime: ReportUtils.detectRuntime(),
-      environments,
-      suites: await this._toFKSuites(context, this._rootSuite),
-      unattributedErrors: this._unattributedErrors.map(e => this._toFKTestError(context, e)),
+      worktree,
+      config: this._config,
+      rootSuite: this._rootSuite,
       duration: parseDurationMS(result.duration),
       startTimestamp: +result.startTime as FK.UnixTimestampMS,
+      flakinessProject: this._options.flakinessProject,
+      results: this._results,
+      stdio: this._stdioEntries,
+      title: this._options.title,
+      unattributedErrors: this._unattributedErrors,
     });
     ReportUtils.collectSources(worktree, report);
     this._cpuUtilization.enrich(report);
     this._ramUtilization.enrich(report);
 
-    for (const unaccessibleAttachment of context.unaccessibleAttachmentPaths)
+    for (const unaccessibleAttachment of unaccessibleAttachmentPaths)
       warn(`cannot access attachment ${unaccessibleAttachment}`);
 
     this._report = report;
-    this._attachments = await writeReport(report, Array.from(context.attachments.values()), this._outputFolder);
+    this._attachments = await writeReport(report, attachments, this._outputFolder);
     this._result = result;
   }
 
@@ -432,27 +220,4 @@ To open last Flakiness report, run:
 
 function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
-}
-
-type GenericProject = {
-  name: string,
-}
-
-function createEnvironments<T extends GenericProject>(projects: T[]): Map<T, FK.Environment> {
-  // Each environment must have a unique name in this report so that we differentiate between them.
-  let uniqueNames = new Set<string>();
-  const result = new Map<T, FK.Environment>();
-  for (const project of projects) {
-    let defaultName = project.name;
-    if (!defaultName.trim())
-      defaultName = 'anonymous';
-
-    let name = defaultName;
-    for (let i = 2; uniqueNames.has(name); ++i)
-      name = `${defaultName}-${i}`;
-    uniqueNames.add(defaultName);
-
-    result.set(project, ReportUtils.createEnvironment({ name }));
-  }
-  return result;
 }
