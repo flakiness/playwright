@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
 import pkg from '../package.json' with { type: 'json' };
+import { isShardRun, writeShardTestList, type PlannedTest, type ReporterMode } from './sharding.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -96,6 +97,8 @@ export default class FlakinessReporter implements Reporter {
     open?: OpenMode,
     collectBrowserVersions?: boolean,
     disableUpload?: boolean,
+    // Injected by Playwright when constructing built-in reporters; 'list' for `--list` runs.
+    _mode?: ReporterMode,
   } = {}) {
     this._outputFolder = path.resolve(process.cwd(), this._options.outputFolder ?? process.env.FLAKINESS_OUTPUT_DIR ?? 'flakiness-report');
 
@@ -395,6 +398,26 @@ export default class FlakinessReporter implements Reporter {
     for (const unaccessibleAttachment of context.unaccessibleAttachmentPaths)
       warn(`cannot access attachment ${unaccessibleAttachment}`);
 
+    // `--list` runs enumerate tests but never execute them, so their reports have no run
+    // data worth uploading. Handle the optional shard-planning side-effect and bail out.
+    if (this._options._mode === 'list') {
+      const shardRequest = isShardRun(this._options._mode);
+      if (shardRequest) {
+        try {
+          const plannedTests = collectPlannedTests(this._rootSuite, this._config.rootDir, worktree);
+          await writeShardTestList(report, plannedTests, shardRequest.slot, {
+            flakinessEndpoint: this._options.endpoint,
+            flakinessAccessToken: this._options.token,
+            logger: { log, warn, err },
+            outputFile: shardRequest.outputFile,
+          });
+        } catch (e) {
+          err(`perfect-shards: unexpected error: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return;
+    }
+
     this._report = report;
     this._attachments = await writeReport(report, Array.from(context.attachments.values()), this._outputFolder);
     this._result = result;
@@ -436,6 +459,39 @@ function envBool(name: string): boolean {
 
 type GenericProject = {
   name: string,
+}
+
+// Enumerate every TestCase Playwright knows about, in the shape Playwright's
+// `--test-list` matcher expects: project name + rootDir-relative file path +
+// describe-and-test titles (anonymous describes already filtered out by PW).
+// We also emit the git-relative file path so sharding.ts can match against
+// historical durations, which are stored relative to the git root.
+function collectPlannedTests(
+  rootSuite: Suite,
+  rootDir: string,
+  worktree: GitWorktree,
+): PlannedTest[] {
+  const out: PlannedTest[] = [];
+  for (const test of rootSuite.allTests()) {
+    const titlePath = test.titlePath();
+    // PW emits [rootTitle, projectName, fileTitle, ...describeTitles, testTitle].
+    if (titlePath.length < 4)
+      continue;
+    const projectName = titlePath[1];
+    const fileRootDirRelative = toPosix(path.relative(rootDir, test.location.file));
+    const fileGitRelative = worktree.gitPath(path.resolve(test.location.file));
+    out.push({
+      projectName,
+      fileRootDirRelative,
+      fileGitRelative,
+      titlePath: titlePath.slice(3),
+    });
+  }
+  return out;
+}
+
+function toPosix(p: string): string {
+  return path.sep === '\\' ? p.split('\\').join('/') : p;
 }
 
 function createEnvironments<T extends GenericProject>(projects: T[]): Map<T, FK.Environment> {

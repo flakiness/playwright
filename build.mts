@@ -20,6 +20,7 @@ const { errors } = await esbuild.build({
   color: true,
   entryPoints: [
     path.join(srcDir, 'playwright-test.ts'),
+    path.join(srcDir, 'sharding.ts'),
   ],
   outdir: outDir,
   format: 'esm',
