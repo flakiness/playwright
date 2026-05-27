@@ -106,6 +106,7 @@ export async function buildReport(options: {
 
   return {
     report,
+    projects: projects.map((project, idx) => [project, environments[idx]] as const),
     unaccessibleAttachmentPaths: context.unaccessibleAttachmentPaths,
     attachments: Array.from(context.attachments.values()),
     testMappings: context.testMappings,

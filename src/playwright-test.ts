@@ -11,6 +11,7 @@ import {
   uploadReport,
   writeReport
 } from '@flakiness/sdk';
+import { BrowserType } from '@playwright/test';
 import type {
   FullConfig,
   FullProject,
@@ -163,7 +164,7 @@ export default class FlakinessReporter implements Reporter {
     }
     const { commitId, worktree } = worktreeResult;
 
-    const { report, attachments, unaccessibleAttachmentPaths } = await buildReport({
+    const { projects, report, attachments, unaccessibleAttachmentPaths } = await buildReport({
       commitId,
       worktree,
       config: this._config,
@@ -179,6 +180,44 @@ export default class FlakinessReporter implements Reporter {
     ReportUtils.collectSources(worktree, report);
     this._cpuUtilization.enrich(report);
     this._ramUtilization.enrich(report);
+
+    if (this._options.collectBrowserVersions) {
+      try {
+        // The process.argv[1] is the absolute path of the playwright executable than runs this custom
+        // reporter. It also runs tests.
+        // Unfortunately, we're not given the Playwright instance in the playwright api;
+        // as a result, jump through a few hoops to get the instance.
+        // 
+        // 1. Resolve process.argv[1] to absolute path. This is a symlink that points to some file
+        //    inside the @playwright/test node module.
+        // 2. Go up until we reach the "test" directory.
+        // 3. Playwright's main import is the 'index.js' file.
+        let playwrightPath = fs.realpathSync(process.argv[1]);
+        while (path.basename(playwrightPath) !== 'test')
+          playwrightPath = path.dirname(playwrightPath);
+        const module = await import(path.join(playwrightPath, 'index.js'));
+
+        for (const [project, env] of projects) {
+          const { browserName = 'chromium', channel, headless } = project.use;
+
+          let browserType: BrowserType;
+          switch (browserName) {
+            case 'chromium': browserType = module.default.chromium; break;
+            case 'firefox': browserType = module.default.firefox; break;
+            case 'webkit': browserType = module.default.webkit; break;
+            default: throw new Error(`Unsupported browser: ${browserName}`);
+          }
+
+          const browser = await browserType.launch({ channel, headless });
+          const version = browser.version();
+          await browser.close();
+          env.metadata ??= {};
+          env.metadata['browser'] = (channel ?? browserName).toLowerCase().trim() + ' ' + version;
+        }
+      } catch (e) {
+        err(`Failed to resolve browser version: ${e}`);
+      }
+    }
 
     for (const unaccessibleAttachment of unaccessibleAttachmentPaths)
       warn(`cannot access attachment ${unaccessibleAttachment}`);
