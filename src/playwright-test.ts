@@ -239,21 +239,23 @@ export default class FlakinessReporter implements Reporter {
 
   private async _generatePerfectShard(shard: ShardRequest, report: FK.Report, testMappings: Map<string, TestCase>) {
     const durationsReport = await fetchHistoricalDurations(report, {
-      flakinessAccessToken: this._options.token,
+      flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
       flakinessEndpoint: this._options.endpoint,
     });
-    const testCaseDurations: [TestCase, number][] = [];
+    const durationPredictions = new Map<TestCase, number>();
     ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
       for (const attempt of test.attempts) {
         const envName = durationsReport.environments[attempt.environmentIdx ?? 0].name;
         const fkTestId = computeFKTestId(envName, test, parentSuites);
         const testCase = testMappings.get(fkTestId);
         if (testCase && attempt.duration !== undefined)
-          testCaseDurations.push([testCase, attempt.duration]);
+          durationPredictions.set(testCase, attempt.duration);
       }
     });
-
+    const testCaseDurations: [TestCase, number][] = (this._rootSuite?.allTests() ?? []).map(testCase => [testCase, durationPredictions.get(testCase) ?? 0]);
     testCaseDurations.sort(([t1, d1], [t2, d2]) => {
+      // Make sure this sort is stable & deterministic so that different machines
+      // yield exactly the same shards.
       if (d2 !== d1)
         return d2 - d1;
       return t1.id < t2.id ? -1 : t1.id > t2.id ? 1 : 0;
