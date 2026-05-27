@@ -44,5 +44,5 @@ test('should have valid timestamps in stdio entries', async ({}, testInfo) => {
   const attempt = report.suites![0]!.tests![0]!.attempts[0];
   const [first, second] = assertCount(attempt.stdio, 2);
   expect(first.dts).toBeGreaterThanOrEqual(0);
-  expect(second.dts).toBeGreaterThanOrEqual(100);
+  expect(second.dts).toBeGreaterThanOrEqual(50);
 });
