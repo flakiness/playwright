@@ -44,7 +44,7 @@ type ProcessingContext = {
 }
 
 export function computeFKTestId(envName: string, test: FK.Test, parentSuites: FK.Suite[]): string {
-  return [envName, parentSuites.map(suite => suite.title), test.title].join('-');
+  return JSON.stringify([envName, parentSuites.map(suite => suite.title), test.title]);
 }
 
 export async function buildReport(options: {
