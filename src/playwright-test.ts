@@ -262,7 +262,7 @@ export default class FlakinessReporter implements Reporter {
     const defaultDuration = testCaseDurations.size > 0 ? Array.from(testCaseDurations.values()).sort((a, b) => a - b)[testCaseDurations.size / 2|0] : 1000;
 
     // The sharding operates on "tests" - a source location of test + a project it runs at. The same test can have
-    // multiple test cases, i.e. when they're executed with `--repeat-each`. 
+    // multiple test cases, i.e. when they're executed with `--repeat-each`.
     // Since when sharding we can select either all or nothing of these tests,
     // we accumulate Test's durations across the same test cases.
     const testDurations = new Map<TestEntry, number>();
@@ -288,13 +288,13 @@ export default class FlakinessReporter implements Reporter {
       totalDuration: 0,
     }));
 
-    for (const [testFileEntry, duration] of allDurations) {
+    for (const [testEntry, duration] of allDurations) {
       let minShardIdx = 0;
       for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
         if (shards[shardIdx].totalDuration < shards[minShardIdx].totalDuration)
           minShardIdx = shardIdx;
       }
-      shards[minShardIdx].entries.push(testFileEntry);
+      shards[minShardIdx].entries.push(testEntry);
       shards[minShardIdx].totalDuration += duration;
     }
 
