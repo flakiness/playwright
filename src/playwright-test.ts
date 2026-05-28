@@ -369,6 +369,6 @@ function createTestEntry(testCase: TestCase, rootDir: string): TestEntry {
   const segments = [];
   if (projectName)
     segments.push(`[${projectName}]`);
-  segments.push(relativeFile, ...titles);
+  segments.push([relativeFile, testCase.location.line, testCase.location.column].join(':'), ...titles);
   return segments.join(' › ') as TestEntry;
 }
