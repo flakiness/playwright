@@ -238,10 +238,12 @@ export default class FlakinessReporter implements Reporter {
   }
 
   private async _generatePerfectShard(shard: ShardRequest, report: FK.Report, testMappings: Map<string, TestCase>) {
+    // Fetch durations from the Flakiness.io
     const durationsReport = await fetchHistoricalDurations(report, {
       flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
       flakinessEndpoint: this._options.endpoint,
     });
+    // Map durations to the test case instances.
     const durationPredictions = new Map<TestCase, number>();
     ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
       for (const attempt of test.attempts) {
@@ -252,50 +254,48 @@ export default class FlakinessReporter implements Reporter {
           durationPredictions.set(testCase, attempt.duration);
       }
     });
-    const testCaseDurations: [TestCase, number][] = (this._rootSuite?.allTests() ?? []).map(testCase => [testCase, durationPredictions.get(testCase) ?? 0]);
-    testCaseDurations.sort(([t1, d1], [t2, d2]) => {
+
+    // Default duration should be either P50 if we have SOME data, or just 1 second otherwise.
+    const defaultDuration = durationPredictions.size > 0 ? Array.from(durationPredictions.values()).sort()[durationPredictions.size / 2|0] : 1000;
+
+    // We can select tests in the shard file using test coordinates. If tests are repeated, i.e.
+    // using the --repeat-each, then we will have multiple test case instances, but we can
+    // select either all or nothing in the shard.
+    // Thus we need to compute accumulated durations per each test file entry, and shard those.
+    const entryDurationsMap = new Map<TestFileEntry, number>();
+    const rootDir = this._config!.rootDir;
+    for (const test of (this._rootSuite?.allTests() ?? [])) {
+      const entry = createTestFileEntry(test, rootDir);
+      entryDurationsMap.set(entry, (entryDurationsMap.get(entry) ?? 0) + (durationPredictions.get(test) ?? defaultDuration));
+    }
+    const entryDurations: [TestFileEntry, number][] = Array.from(entryDurationsMap).sort(([t1, d1], [t2, d2]) => {
       // Make sure this sort is stable & deterministic so that different machines
       // yield exactly the same shards.
       if (d2 !== d1)
         return d2 - d1;
-      return t1.id < t2.id ? -1 : t1.id > t2.id ? 1 : 0;
+      return t1 < t2 ? -1 : t1 > t2 ? 1 : 0;
     });
 
     type Shard = {
-      testCases: TestCase[],
+      entries: TestFileEntry[],
       totalDuration: number,
     };
     const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
-      testCases: [],
+      entries: [],
       totalDuration: 0,
     }));
 
-    for (const [testCase, duration] of testCaseDurations) {
+    for (const [testFileEntry, duration] of entryDurations) {
       let minShardIdx = 0;
       for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
         if (shards[shardIdx].totalDuration < shards[minShardIdx].totalDuration)
           minShardIdx = shardIdx;
       }
-      shards[minShardIdx].testCases.push(testCase);
+      shards[minShardIdx].entries.push(testFileEntry);
       shards[minShardIdx].totalDuration += duration;
     }
 
-    const rootDir = this._config!.rootDir;
-    const lines = shards[shard.current - 1].testCases.map(testCase => {
-      // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
-      // Playwright's --test-list parser expects: `[projectName] › relativeFile › title1 › ... › testTitle`,
-      // with `›` (U+203A) as the delimiter and the file path relative to config.rootDir (posix).
-      const titlePath = testCase.titlePath();
-      const projectName = titlePath[1] ?? '';
-      const titles = titlePath.slice(3);
-      const relativeFile = path.relative(rootDir, testCase.location.file).split(path.sep).join('/');
-      const segments = [];
-      if (projectName)
-        segments.push(`[${projectName}]`);
-      segments.push(relativeFile, ...titles);
-      return segments.join(' › ');
-    });
-    await fs.promises.writeFile(shard.outputFile, lines.join('\n') + '\n');
+    await fs.promises.writeFile(shard.outputFile, shards[shard.current - 1].entries.join('\n') + '\n');
   }
 
   async onExit(): Promise<void> {
@@ -347,4 +347,25 @@ function parseShardEnv(): ShardRequest | undefined {
   if (!total || current < 1 || current > total)
     return undefined;
   return { current, total, outputFile: fileValue };
+}
+
+type Brand<T, Brand extends string> = T & {
+  readonly [B in Brand as `__${B}_brand`]: never;
+};
+
+type TestFileEntry = Brand<string, 'TestFileEntry'>;
+
+function createTestFileEntry(testCase: TestCase, rootDir: string): TestFileEntry {
+  // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
+  // Playwright's --test-list parser expects: `[projectName] › relativeFile › title1 › ... › testTitle`,
+  // with `›` (U+203A) as the delimiter and the file path relative to config.rootDir (posix).
+  const titlePath = testCase.titlePath();
+  const projectName = titlePath[1] ?? '';
+  const titles = titlePath.slice(3);
+  const relativeFile = path.relative(rootDir, testCase.location.file).split(path.sep).join('/');
+  const segments = [];
+  if (projectName)
+    segments.push(`[${projectName}]`);
+  segments.push(relativeFile, ...titles);
+  return segments.join(' › ') as TestFileEntry;
 }
