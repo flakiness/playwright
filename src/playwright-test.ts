@@ -183,14 +183,6 @@ export default class FlakinessReporter implements Reporter {
       unattributedErrors: this._unattributedErrors,
     });
 
-    const shardRequest = parseShardEnv();
-    if (this._options._mode === 'list' && shardRequest)
-      await this._generatePerfectShard(shardRequest, report, testMappings);
-
-    ReportUtils.collectSources(worktree, report);
-    this._cpuUtilization.enrich(report);
-    this._ramUtilization.enrich(report);
-
     if (this._options.collectBrowserVersions) {
       try {
         // The process.argv[1] is the absolute path of the playwright executable than runs this custom
@@ -229,6 +221,17 @@ export default class FlakinessReporter implements Reporter {
       }
     }
 
+    const shardRequest = parseShardEnv();
+    if (this._options._mode === 'list' && shardRequest) {
+      // Generate shard and do nothing else.
+      await this._generatePerfectShard(shardRequest, report, testMappings);
+      return;
+    }
+
+    ReportUtils.collectSources(worktree, report);
+    this._cpuUtilization.enrich(report);
+    this._ramUtilization.enrich(report);
+
     for (const unaccessibleAttachment of unaccessibleAttachmentPaths)
       warn(`cannot access attachment ${unaccessibleAttachment}`);
 
@@ -244,31 +247,31 @@ export default class FlakinessReporter implements Reporter {
       flakinessEndpoint: this._options.endpoint,
     });
     // Map durations to the test case instances.
-    const durationPredictions = new Map<TestCase, number>();
+    const testCaseDurations = new Map<TestCase, number>();
     ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
       for (const attempt of test.attempts) {
         const envName = durationsReport.environments[attempt.environmentIdx ?? 0].name;
         const fkTestId = computeFKTestId(envName, test, parentSuites);
         const testCase = testMappings.get(fkTestId);
         if (testCase && attempt.duration !== undefined)
-          durationPredictions.set(testCase, attempt.duration);
+          testCaseDurations.set(testCase, attempt.duration);
       }
     });
 
     // Default duration should be either P50 if we have SOME data, or just 1 second otherwise.
-    const defaultDuration = durationPredictions.size > 0 ? Array.from(durationPredictions.values()).sort()[durationPredictions.size / 2|0] : 1000;
+    const defaultDuration = testCaseDurations.size > 0 ? Array.from(testCaseDurations.values()).sort((a, b) => a - b)[testCaseDurations.size / 2|0] : 1000;
 
-    // We can select tests in the shard file using test coordinates. If tests are repeated, i.e.
-    // using the --repeat-each, then we will have multiple test case instances, but we can
-    // select either all or nothing in the shard.
-    // Thus we need to compute accumulated durations per each test file entry, and shard those.
-    const entryDurationsMap = new Map<TestFileEntry, number>();
+    // The sharding operates on "tests" - a source location of test + a project it runs at. The same test can have
+    // multiple test cases, i.e. when they're executed with `--repeat-each`. 
+    // Since when sharding we can select either all or nothing of these tests,
+    // we accumulate Test's durations across the same test cases.
+    const testDurations = new Map<TestEntry, number>();
     const rootDir = this._config!.rootDir;
     for (const test of (this._rootSuite?.allTests() ?? [])) {
-      const entry = createTestFileEntry(test, rootDir);
-      entryDurationsMap.set(entry, (entryDurationsMap.get(entry) ?? 0) + (durationPredictions.get(test) ?? defaultDuration));
+      const entry = createTestEntry(test, rootDir);
+      testDurations.set(entry, (testDurations.get(entry) ?? 0) + (testCaseDurations.get(test) ?? defaultDuration));
     }
-    const entryDurations: [TestFileEntry, number][] = Array.from(entryDurationsMap).sort(([t1, d1], [t2, d2]) => {
+    const allDurations: [TestEntry, number][] = Array.from(testDurations).sort(([t1, d1], [t2, d2]) => {
       // Make sure this sort is stable & deterministic so that different machines
       // yield exactly the same shards.
       if (d2 !== d1)
@@ -277,7 +280,7 @@ export default class FlakinessReporter implements Reporter {
     });
 
     type Shard = {
-      entries: TestFileEntry[],
+      entries: TestEntry[],
       totalDuration: number,
     };
     const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
@@ -285,7 +288,7 @@ export default class FlakinessReporter implements Reporter {
       totalDuration: 0,
     }));
 
-    for (const [testFileEntry, duration] of entryDurations) {
+    for (const [testFileEntry, duration] of allDurations) {
       let minShardIdx = 0;
       for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
         if (shards[shardIdx].totalDuration < shards[minShardIdx].totalDuration)
@@ -353,9 +356,9 @@ type Brand<T, Brand extends string> = T & {
   readonly [B in Brand as `__${B}_brand`]: never;
 };
 
-type TestFileEntry = Brand<string, 'TestFileEntry'>;
+type TestEntry = Brand<string, 'TestEntry'>;
 
-function createTestFileEntry(testCase: TestCase, rootDir: string): TestFileEntry {
+function createTestEntry(testCase: TestCase, rootDir: string): TestEntry {
   // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
   // Playwright's --test-list parser expects: `[projectName] › relativeFile › title1 › ... › testTitle`,
   // with `›` (U+203A) as the delimiter and the file path relative to config.rootDir (posix).
@@ -367,5 +370,5 @@ function createTestFileEntry(testCase: TestCase, rootDir: string): TestFileEntry
   if (projectName)
     segments.push(`[${projectName}]`);
   segments.push(relativeFile, ...titles);
-  return segments.join(' › ') as TestFileEntry;
+  return segments.join(' › ') as TestEntry;
 }
