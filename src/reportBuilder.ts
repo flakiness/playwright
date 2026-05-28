@@ -1,5 +1,5 @@
 import {
-  FlakinessReport as FK
+  FlakinessReport as FK,
 } from '@flakiness/flakiness-report';
 import {
   CIUtils,
@@ -41,6 +41,10 @@ type ProcessingContext = {
   results: Map<TestCase, Set<TestResult>>,
   stdio: Map<TestResult, StdIOEntry[]>,
   testMappings: Map<string, TestCase>,
+}
+
+export function computeFKTestId(envName: string, test: FK.Test, parentSuites: FK.Suite[]): string {
+  return JSON.stringify([envName, parentSuites.map(suite => suite.title), test.title]);
 }
 
 export async function buildReport(options: {
@@ -98,7 +102,7 @@ export async function buildReport(options: {
     testRunner: options.config.version ? { name: '@playwright/test', version: options.config.version } : undefined,
     runtime: ReportUtils.detectRuntime(),
     environments,
-    suites: await toFKSuites(context, options.rootSuite),
+    suites: await toFKSuites(context, options.rootSuite, []),
     unattributedErrors: (options.unattributedErrors ?? []).map(e => toFKTestError(context, e)),
     duration: options.duration,
     startTimestamp: options.startTimestamp,
@@ -123,12 +127,12 @@ function toFKTestError(context: ProcessingContext, pwError: TestError) {
   }
 }
 
-async function toFKSuites(context: ProcessingContext, pwSuite: Suite): Promise<FK.Suite[]> {
+async function toFKSuites(context: ProcessingContext, pwSuite: Suite, parentFKSuites: FK.Suite[]): Promise<FK.Suite[]> {
   const location = pwSuite.location;
   // Location should be missing only for root and project suites. Either way, we skip
   // the suite if there's no location.
   if (pwSuite.type === 'root' || pwSuite.type === 'project' || !location)
-    return (await Promise.all(pwSuite.suites.map(suite => toFKSuites(context, suite)))).flat();
+    return (await Promise.all(pwSuite.suites.map(suite => toFKSuites(context, suite, parentFKSuites)))).flat();
 
   let type: FK.SuiteType = 'suite';
   if (pwSuite.type === 'file')
@@ -136,17 +140,21 @@ async function toFKSuites(context: ProcessingContext, pwSuite: Suite): Promise<F
   else if (pwSuite.type === 'describe' && !pwSuite.title)
     type = 'anonymous suite';
 
-  return [{
+  const suite: FK.Suite = {
     type,
     title: pwSuite.title,
     location: createLocation(context, location),
-    suites: (await Promise.all(pwSuite.suites.map(suite => toFKSuites(context, suite)))).flat(),
-    tests: await Promise.all(pwSuite.tests.map(test => toFKTest(context, test))),
-  }];
+    suites: [],
+    tests: [],
+  };
+  parentFKSuites = [...parentFKSuites, suite];
+  suite.suites = (await Promise.all(pwSuite.suites.map(suite => toFKSuites(context, suite, parentFKSuites)))).flat();
+  suite.tests = await Promise.all(pwSuite.tests.map(test => toFKTest(context, test, parentFKSuites)));
+  return [suite];
 }
 
-async function toFKTest(context: ProcessingContext, pwTest: TestCase): Promise<FK.Test> {
-  return {
+async function toFKTest(context: ProcessingContext, pwTest: TestCase, parentFKSuites: FK.Suite[]): Promise<FK.Test> {
+  const test: FK.Test = {
     title: pwTest.title,
     // Playwright Test tags must start with '@' so we cut it off.
     tags: pwTest.tags.map(tag => tag.startsWith('@') ? tag.substring(1) : tag),
@@ -154,6 +162,12 @@ async function toFKTest(context: ProcessingContext, pwTest: TestCase): Promise<F
     // de-duplication of tests will happen later, so here we will have all attempts.
     attempts: await Promise.all(Array.from(context.results.get(pwTest) ?? new Set<TestResult>()).map(result => toFKRunAttempt(context, pwTest, result))),
   };
+
+  const envIdx = context.projects.indexOf(pwTest.parent.project()!);
+  const envName = context.environments[envIdx].name;
+  const fkTestId = computeFKTestId(envName, test, parentFKSuites);
+  context.testMappings.set(fkTestId, pwTest);
+  return test;
 }
 
 async function toFKRunAttempt(context: ProcessingContext, pwTest: TestCase, result: TestResult): Promise<FK.RunAttempt> {

@@ -22,7 +22,8 @@ import type {
 import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
-import { buildReport } from './reportBuilder.js';
+import { fetchHistoricalDurations } from './durations.js';
+import { buildReport, computeFKTestId } from './reportBuilder.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -67,6 +68,8 @@ type StdIOEntry = {
   time: number,
 }
 
+type ReporterMode = 'list' | 'test' | 'merge';
+
 export default class FlakinessReporter implements Reporter {
   private _config?: FullConfig;
   private _rootSuite?: Suite;
@@ -93,6 +96,8 @@ export default class FlakinessReporter implements Reporter {
     open?: OpenMode,
     collectBrowserVersions?: boolean,
     disableUpload?: boolean,
+    // Injected by Playwright when constructing built-in reporters; 'list' for `--list` runs.
+    _mode?: ReporterMode,
   } = {}) {
     this._outputFolder = path.resolve(process.cwd(), this._options.outputFolder ?? process.env.FLAKINESS_OUTPUT_DIR ?? 'flakiness-report');
 
@@ -164,7 +169,7 @@ export default class FlakinessReporter implements Reporter {
     }
     const { commitId, worktree } = worktreeResult;
 
-    const { projects, report, attachments, unaccessibleAttachmentPaths } = await buildReport({
+    const { projects, report, attachments, unaccessibleAttachmentPaths, testMappings } = await buildReport({
       commitId,
       worktree,
       config: this._config,
@@ -177,9 +182,6 @@ export default class FlakinessReporter implements Reporter {
       title: this._options.title,
       unattributedErrors: this._unattributedErrors,
     });
-    ReportUtils.collectSources(worktree, report);
-    this._cpuUtilization.enrich(report);
-    this._ramUtilization.enrich(report);
 
     if (this._options.collectBrowserVersions) {
       try {
@@ -219,12 +221,84 @@ export default class FlakinessReporter implements Reporter {
       }
     }
 
+    const shardRequest = parseShardEnv();
+    if (this._options._mode === 'list' && shardRequest) {
+      // Generate shard and do nothing else.
+      await this._generatePerfectShard(shardRequest, report, testMappings);
+      return;
+    }
+
+    ReportUtils.collectSources(worktree, report);
+    this._cpuUtilization.enrich(report);
+    this._ramUtilization.enrich(report);
+
     for (const unaccessibleAttachment of unaccessibleAttachmentPaths)
       warn(`cannot access attachment ${unaccessibleAttachment}`);
 
     this._report = report;
     this._attachments = await writeReport(report, attachments, this._outputFolder);
     this._result = result;
+  }
+
+  private async _generatePerfectShard(shard: ShardRequest, report: FK.Report, testMappings: Map<string, TestCase>) {
+    // Fetch durations from the Flakiness.io
+    const durationsReport = await fetchHistoricalDurations(report, {
+      flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
+      flakinessEndpoint: this._options.endpoint,
+    });
+    // Map durations to the test case instances.
+    const testCaseDurations = new Map<TestCase, number>();
+    ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
+      for (const attempt of test.attempts) {
+        const envName = durationsReport.environments[attempt.environmentIdx ?? 0].name;
+        const fkTestId = computeFKTestId(envName, test, parentSuites);
+        const testCase = testMappings.get(fkTestId);
+        if (testCase && attempt.duration !== undefined)
+          testCaseDurations.set(testCase, attempt.duration);
+      }
+    });
+
+    // Default duration should be either P50 if we have SOME data, or just 1 second otherwise.
+    const defaultDuration = testCaseDurations.size > 0 ? Array.from(testCaseDurations.values()).sort((a, b) => a - b)[testCaseDurations.size / 2|0] : 1000;
+
+    // The sharding operates on "tests" - a source location of test + a project it runs at. The same test can have
+    // multiple test cases, i.e. when they're executed with `--repeat-each`.
+    // Since when sharding we can select either all or nothing of these tests,
+    // we accumulate Test's durations across the same test cases.
+    const testDurations = new Map<TestEntry, number>();
+    const rootDir = this._config!.rootDir;
+    for (const test of (this._rootSuite?.allTests() ?? [])) {
+      const entry = createTestEntry(test, rootDir);
+      testDurations.set(entry, (testDurations.get(entry) ?? 0) + (testCaseDurations.get(test) ?? defaultDuration));
+    }
+    const allDurations: [TestEntry, number][] = Array.from(testDurations).sort(([t1, d1], [t2, d2]) => {
+      // Make sure this sort is stable & deterministic so that different machines
+      // yield exactly the same shards.
+      if (d2 !== d1)
+        return d2 - d1;
+      return t1 < t2 ? -1 : t1 > t2 ? 1 : 0;
+    });
+
+    type Shard = {
+      entries: TestEntry[],
+      totalDuration: number,
+    };
+    const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
+      entries: [],
+      totalDuration: 0,
+    }));
+
+    for (const [testEntry, duration] of allDurations) {
+      let minShardIdx = 0;
+      for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
+        if (shards[shardIdx].totalDuration < shards[minShardIdx].totalDuration)
+          minShardIdx = shardIdx;
+      }
+      shards[minShardIdx].entries.push(testEntry);
+      shards[minShardIdx].totalDuration += duration;
+    }
+
+    await fs.promises.writeFile(shard.outputFile, shards[shard.current - 1].entries.join('\n') + '\n');
   }
 
   async onExit(): Promise<void> {
@@ -259,4 +333,42 @@ To open last Flakiness report, run:
 
 function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
+}
+
+type ShardRequest = { current: number, total: number, outputFile: string };
+
+function parseShardEnv(): ShardRequest | undefined {
+  const slotValue = process.env.FLAKINESS_SHARD;
+  const fileValue = process.env.FLAKINESS_SHARD_FILE;
+  if (!slotValue || !fileValue)
+    return undefined;
+  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(slotValue);
+  if (!match)
+    return undefined;
+  const current = Number(match[1]);
+  const total = Number(match[2]);
+  if (!total || current < 1 || current > total)
+    return undefined;
+  return { current, total, outputFile: fileValue };
+}
+
+type Brand<T, Brand extends string> = T & {
+  readonly [B in Brand as `__${B}_brand`]: never;
+};
+
+type TestEntry = Brand<string, 'TestEntry'>;
+
+function createTestEntry(testCase: TestCase, rootDir: string): TestEntry {
+  // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
+  // Playwright's --test-list parser expects: `[projectName] › relativeFile › title1 › ... › testTitle`,
+  // with `›` (U+203A) as the delimiter and the file path relative to config.rootDir (posix).
+  const titlePath = testCase.titlePath();
+  const projectName = titlePath[1] ?? '';
+  const titles = titlePath.slice(3);
+  const relativeFile = path.relative(rootDir, testCase.location.file).split(path.sep).join('/');
+  const segments = [];
+  if (projectName)
+    segments.push(`[${projectName}]`);
+  segments.push([relativeFile, testCase.location.line, testCase.location.column].join(':'), ...titles);
+  return segments.join(' › ') as TestEntry;
 }
