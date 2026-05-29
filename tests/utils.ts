@@ -1,9 +1,11 @@
 import { FlakinessReport } from '@flakiness/flakiness-report';
 import { readReport, ReportUtils } from '@flakiness/sdk';
 import { expect, PlaywrightTestConfig, TestInfo } from '@playwright/test';
-import { execSync } from 'node:child_process';
+import assert from 'node:assert';
+import { execFile, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { durationFromWeightInTitle, startFakeDurationsServer } from './fakeDurationsServer.js';
 
 // On MacOS, the /tmp is a symlink to /private/tmp. This results
 // in stack traces using `/private/tmp`. This might confuse some
@@ -31,22 +33,12 @@ const DEFAULT_FILES: Record<string, string> = {
   }),
 };
 
-export async function generateFlakinessReport(
+async function initializeDirectoryWithTests(
     testInfo: TestInfo,
     files: Record<string, string>,
     options?: FlakinessReporterOptions,
     playwrightConfig?: PlaywrightTestConfig,
-    extraEnv?: Record<string, string>,
-    cliArgs: string[] = [],
-  ): Promise<{
-    log: {
-        stdout: string;
-        stderr: string;
-    };
-    report: FlakinessReport.Report;
-    attachments: ReportUtils.FileAttachment[];
-    missingAttachments: FlakinessReport.Attachment[];
-  }> {
+  ): Promise<{ targetDir: string, reportDir: string }> {
   const targetDir = path.join(
     ARTIFACTS_DIR,
     slugify(testInfo.titlePath.join('-')),
@@ -90,36 +82,113 @@ export async function generateFlakinessReport(
     cwd: targetDir,
     stdio: 'pipe',
   });
+  return { targetDir, reportDir };
+}
 
+async function runPlaywright(
+  targetDir: string,
+  extraEnv?: Record<string, string>,
+  cliArgs: string[] = [],
+) {
   // Run playwright test in the temp directory.
   // Use NODE_PATH so test files in the temp dir can resolve @playwright/test.
-  const playwrightBin = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'playwright');
+  const playwrightCli = path.join(PROJECT_ROOT, 'node_modules', '@playwright', 'test', 'cli.js');
+  assert(fs.existsSync(playwrightCli), `missing Playwright CLI at ${playwrightCli}`);
   const env = {
     ...process.env,
     NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
     ...(extraEnv ?? {}),
   };
   delete (env as any)['CI'];
-  let stdout = '';
-  let stderr = '';
-  try {
-    const result = execSync(`"${playwrightBin}" test ${cliArgs.join(' ')}`, {
+  return await new Promise<{ stdout: string, stderr: string }>(resolve => {
+    execFile(process.execPath, [playwrightCli, 'test', ...cliArgs], {
       cwd: targetDir,
-      stdio: 'pipe',
       env,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+    }, (_error, stdout, stderr) => {
+      // Playwright exits with non-zero for test failures, which is expected
+      // for some tests. We still want the report.
+      resolve({ stdout, stderr });
     });
-    stdout = result.toString();
-  } catch (e: any) {
-    // Playwright exits with non-zero for test failures, which is expected
-    // for some tests. We still want the report.
-    stdout = e.stdout?.toString() ?? '';
-    stderr = e.stderr?.toString() ?? '';
-  }
+  });
+}
 
+export async function generateFlakinessReport(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    options?: FlakinessReporterOptions,
+    playwrightConfig?: PlaywrightTestConfig,
+    extraEnv?: Record<string, string>,
+    cliArgs: string[] = [],
+  ): Promise<{
+    log: {
+        stdout: string;
+        stderr: string;
+    };
+    report: FlakinessReport.Report;
+    attachments: ReportUtils.FileAttachment[];
+    missingAttachments: FlakinessReport.Attachment[];
+  }> {
+  const { targetDir, reportDir } = await initializeDirectoryWithTests(testInfo, files, options, playwrightConfig);
+  const { stdout, stderr } = await runPlaywright(targetDir, extraEnv, cliArgs);
   return {
     ...(await readReport(reportDir)),
     log: { stdout, stderr },
   };
+}
+
+export async function runPerfectShards(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    shards: number,
+    options?: FlakinessReporterOptions,
+    playwrightConfig?: PlaywrightTestConfig,
+    extraEnv?: Record<string, string>,
+    cliArgs: string[] = [],
+  ): Promise<{
+    totalWeight: number,
+    report: FlakinessReport.Report,
+  }[]> {
+  assert(Number.isInteger(shards) && shards >= 1, `shards must be a positive integer, got ${shards}`);
+
+  using durationsServer = await startFakeDurationsServer();
+  const { targetDir, reportDir } = await initializeDirectoryWithTests(testInfo, files, {
+    ...(options ?? {}),
+    endpoint: durationsServer.endpoint,
+    token: options?.token ?? 'fake-token',
+  }, playwrightConfig);
+
+  const result: { totalWeight: number, report: FlakinessReport.Report }[] = [];
+  for (let currentShard = 1; currentShard <= shards; ++currentShard) {
+    const shardFile = path.join(targetDir, `shard_${currentShard.toString().padStart(3, '0')}.txt`);
+    await runPlaywright(targetDir, {
+      ...(extraEnv ?? {}),
+      FLAKINESS_SHARD: `${currentShard}/${shards}`,
+      FLAKINESS_SHARD_FILE: shardFile,
+    }, [...cliArgs, '--list']);
+    assert(fs.existsSync(shardFile), `failed to generate shard file ${shardFile}`);
+
+    fs.rmSync(reportDir, { recursive: true, force: true });
+    await runPlaywright(targetDir, extraEnv, [...cliArgs, `--test-list=${shardFile}`, '--pass-with-no-tests']);
+
+    const { report } = await readReport(reportDir);
+    result.push({ report, totalWeight: reportTotalWeight(report) });
+  }
+  return result;
+}
+
+function reportTotalWeight(report: FlakinessReport.Report): number {
+  let totalWeight = 0;
+  ReportUtils.visitTests(report, test => {
+    for (const attempt of test.attempts) {
+      const envName = report.environments[attempt.environmentIdx ?? 0]?.name;
+      if (envName === undefined)
+        continue;
+      totalWeight += durationFromWeightInTitle(test.title, envName) ?? 0;
+    }
+  });
+  return totalWeight;
 }
 
 function slugify(text: string) {
