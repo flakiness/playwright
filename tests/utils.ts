@@ -92,7 +92,8 @@ async function runPlaywright(
 ) {
   // Run playwright test in the temp directory.
   // Use NODE_PATH so test files in the temp dir can resolve @playwright/test.
-  const playwrightBin = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'playwright');
+  const playwrightCli = path.join(PROJECT_ROOT, 'node_modules', '@playwright', 'test', 'cli.js');
+  assert(fs.existsSync(playwrightCli), `missing Playwright CLI at ${playwrightCli}`);
   const env = {
     ...process.env,
     NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
@@ -100,7 +101,7 @@ async function runPlaywright(
   };
   delete (env as any)['CI'];
   return await new Promise<{ stdout: string, stderr: string }>(resolve => {
-    execFile(playwrightBin, ['test', ...cliArgs], {
+    execFile(process.execPath, [playwrightCli, 'test', ...cliArgs], {
       cwd: targetDir,
       env,
       encoding: 'utf-8',
