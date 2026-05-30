@@ -352,7 +352,11 @@ function parseShardEnv(): ShardRequest | undefined {
 }
 
 export function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
-  const projectDependencies = new Map<string, string[]>(config.projects.map(project => [project.name, project.dependencies]));
+  // We consider both dependencies and teardown as "dependencies".
+  const projectDependencies = new Map<string, string[]>(config.projects.map(project => [project.name, [
+    project.dependencies,
+    project.teardown ? [project.teardown] : [],
+  ].flat()]));
   const leafProjects = setDifference(new Set(projectDependencies.keys()), new Set(Array.from(projectDependencies.values()).flat()))
   const leafTests = rootSuite.allTests().filter(test => {
     const project = test.parent.project();
