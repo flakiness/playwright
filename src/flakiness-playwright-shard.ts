@@ -44,11 +44,14 @@ async function main() {
   const shardFile = path.join(tmpDir, `shard-${parsed.shard.current}-of-${parsed.shard.total}.txt`);
 
   try {
+    const startTime = Date.now();
+    console.error(`Generating balanced shard ${parsed.shard.current}/${parsed.shard.total}...`);
     const listResult = await runPlaywright(playwrightCLI, ['--list', ...parsed.passthrough], {
       ...process.env,
       FLAKINESS_SHARD: `${parsed.shard.current}/${parsed.shard.total}`,
       FLAKINESS_SHARD_FILE: shardFile,
     }, false);
+    console.error(`Done ${formatDuration(Date.now() - startTime)}`);
     if (listResult.code !== 0)
       return finishWithPlaywrightFailure(listResult, 'failed to generate perfect shard');
     if (!fs.existsSync(shardFile)) {
@@ -125,6 +128,10 @@ function hasArg(args: string[], name: string): boolean {
   return args.some(arg => arg === name || arg.startsWith(`${name}=`));
 }
 
+function formatDuration(durationMS: number): string {
+  return `${(durationMS / 1000).toFixed(1)} seconds`;
+}
+
 function resolvePlaywrightCLI(): string {
   const cwdRequire = createRequire(path.join(process.cwd(), 'package.json'));
   try {
@@ -144,9 +151,10 @@ function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, 
     const child = spawn(process.execPath, [cliPath, 'test', ...args], {
       cwd: process.cwd(),
       env,
-      stdio: inheritStdio ? 'inherit' : ['inherit', 'ignore', 'pipe'],
+      stdio: inheritStdio ? 'inherit' : ['ignore', 'pipe', 'pipe'],
     });
     let stderr = '';
+    child.stdout?.resume();
     child.stderr?.on('data', chunk => stderr += chunk);
     child.on('close', (code, signal) => resolve({ code: code ?? 1, signal, stderr }));
   });
