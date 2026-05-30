@@ -58,6 +58,21 @@ test('should shard tests without historical durations', async ({}, testInfo) => 
   expect(shards.map(shard => reportTestCount(shard.report)).sort()).toEqual([2, 2]);
 });
 
+test('should keep repeatEach instances of one test in one shard', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 repeated', async () => {});
+    `,
+  }, 2, {}, {
+    repeatEach: 2,
+  });
+
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([0, 20]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 2]);
+});
+
 test('should generate perfect shards with dependent projects', async ({}, testInfo) => {
   const shards = await runPerfectShards(testInfo, {
     'setup.spec.ts': `
