@@ -88,6 +88,45 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
   expect(shards.map(shard => shard.totalWeight)).toEqual([151, 151]);
 });
 
+test('should generate perfect shards with teardown projects', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 40; ++i)
+        test('w=1 setup-' + i, async () => {});
+    `,
+    'teardown.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 60; ++i)
+        test('w=1 teardown-' + i, async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 10; ++i)
+        test('w=1 app-' + i, async () => {});
+    `,
+    'unit.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 110; ++i)
+        test('w=1 unit-' + i, async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts', teardown: 'teardown' },
+      { name: 'teardown', testMatch: 'teardown.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+      { name: 'unit', testMatch: 'unit.spec.ts' },
+    ],
+  });
+
+  // The best sharding here would be 110 / 110.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([160, 160]);
+});
+
 function reportTestCount(report: FlakinessReport.Report): number {
   let count = 0;
   ReportUtils.visitTests(report, test => count += test.attempts.length);
