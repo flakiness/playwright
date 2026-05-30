@@ -88,6 +88,30 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
   expect(shards.map(shard => shard.totalWeight)).toEqual([151, 151]);
 });
 
+test('should shard dependency projects selected with project filter', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=30 setup alpha', async () => {});
+      test('w=10 setup beta', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=100 app', async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+    ],
+  }, undefined, ['--project=setup']);
+
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([10, 30]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 1]);
+});
+
 test('should generate perfect shards with teardown projects', async ({}, testInfo) => {
   const shards = await runPerfectShards(testInfo, {
     'setup.spec.ts': `

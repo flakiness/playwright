@@ -351,7 +351,8 @@ function parseShardEnv(): ShardRequest | undefined {
 
 function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
   // We consider both dependencies and teardown as "dependencies".
-  const projectDependencies = new Map<string, string[]>(config.projects.map(project => [project.name, [
+  const scheduledProjects = new Set(rootSuite.allTests().map(test => test.parent.project()).filter(x => x !== undefined));
+  const projectDependencies = new Map<string, string[]>(Array.from(scheduledProjects).map(project => [project.name, [
     project.dependencies,
     project.teardown ? [project.teardown] : [],
   ].flat()]));
