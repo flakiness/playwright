@@ -14,7 +14,6 @@ import {
 import { BrowserType } from '@playwright/test';
 import type {
   FullConfig,
-  FullProject,
   FullResult,
   Reporter,
   Suite, TestCase, TestError, TestResult
@@ -40,25 +39,6 @@ function parseDurationMS(value: number) {
     throw new Error(`Duration cannot be less than 0, found ${value}`);
   return (value|0) as FK.DurationMS;
 }
-
-async function existsAsync(aPath: string) {
-  return fs.promises.stat(aPath).then(() => true).catch(e => false);
-}
-
-type ProcessingContext = {
-  project2environmentIdx: Map<FullProject, number>,
-  worktree: GitWorktree,
-  attachments: Map<string, ReportUtils.Attachment>,
-  // Cache FK attachments keyed by the PW Attachment object.
-  // This is required since Playwright Test reports the same attachment objects in both
-  // test attachment list AND in test steps, IF they're attributed to some step.
-  // This caching allows us to save on I/O operations.
-  attachmentsCache: Map<PwAttachment, Promise<FK.Attachment|undefined>>,
-  unaccessibleAttachmentPaths: string[],
-}
-
-
-type PwAttachment = TestResult['attachments'][number];
 
 type OpenMode = 'always' | 'never' | 'on-failure';
 
@@ -278,14 +258,14 @@ export default class FlakinessReporter implements Reporter {
     }));
 
     const addToShardDuration = (shard: Shard, entry: TestEntry) => {
-      const newProjects = entry.projectDeps.difference(shard.projects);
+      const newProjects = setDifference(entry.projectDeps, shard.projects);
       return Array.from(newProjects, proj => projectDurations.get(proj) ?? 0).reduce((acc, ms) => acc + ms, 0) + entry.duration;
     }
 
     const addShardEntry = (shard: Shard, entry: TestEntry) => {
       shard.entries.push(entry);
       shard.totalDuration += addToShardDuration(shard, entry);
-      shard.projects = shard.projects.union(entry.projectDeps);
+      shard.projects = setUnion(shard.projects, entry.projectDeps);
     }
 
     for (const testEntry of entries) {
@@ -338,6 +318,22 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
+function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
+  const result = new Set<T>();
+  for (const value of set) {
+    if (!other.has(value))
+      result.add(value);
+  }
+  return result;
+}
+
+function setUnion<T>(set: Set<T>, other: Set<T>): Set<T> {
+  const result = new Set<T>(set);
+  for (const value of other)
+    result.add(value);
+  return result;
+}
+
 type ShardRequest = { current: number, total: number, outputFile: string };
 
 function parseShardEnv(): ShardRequest | undefined {
@@ -357,7 +353,7 @@ function parseShardEnv(): ShardRequest | undefined {
 
 export function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
   const projectDependencies = new Map<string, string[]>(config.projects.map(project => [project.name, project.dependencies]));
-  const leafProjects = new Set(projectDependencies.keys()).difference(new Set(Array.from(projectDependencies.values()).flat()))
+  const leafProjects = setDifference(new Set(projectDependencies.keys()), new Set(Array.from(projectDependencies.values()).flat()))
   const leafTests = rootSuite.allTests().filter(test => {
     const project = test.parent.project();
     return project && leafProjects.has(project.name);
