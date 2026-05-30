@@ -46,8 +46,10 @@ async function main() {
       FLAKINESS_SHARD_FILE: shardFile,
     }, false);
     console.error(`Done ${formatDuration(Date.now() - startTime)}`);
-    if (listExitCode !== 0)
-      return finishWithPlaywrightFailure(listExitCode, 'failed to generate perfect shard');
+    if (listExitCode !== 0) {
+      console.error(`failed to generate perfect shard: playwright exited with code ${listExitCode}`);
+      return listExitCode;
+    }
     if (!fs.existsSync(shardFile))
       throw new Error('failed to generate perfect shard: shard file was not created. Is @flakiness/playwright configured as a reporter?');
 
@@ -145,18 +147,8 @@ function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, 
   if (typeof result.status === 'number')
     return result.status;
   if (result.signal)
-    return signalExitCode(result.signal);
+    return os.constants.signals[result.signal] ? 128 + os.constants.signals[result.signal] : 1;
   return 1;
-}
-
-function finishWithPlaywrightFailure(exitCode: number, message: string): number {
-  console.error(`${message}: playwright exited with code ${exitCode}`);
-  return exitCode;
-}
-
-function signalExitCode(signal: NodeJS.Signals): number {
-  const signalNumber = os.constants.signals[signal];
-  return signalNumber ? 128 + signalNumber : 1;
 }
 
 main().then(code => {
