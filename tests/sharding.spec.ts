@@ -73,6 +73,16 @@ test('should keep repeatEach instances of one test in one shard', async ({}, tes
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 2]);
 });
 
+test('should reject reporter override for balanced sharding', async ({}, testInfo) => {
+  await expect(runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 alpha', async () => {});
+    `,
+  }, 2, {}, {}, undefined, ['--reporter=line'])).rejects.toThrow(/disable @flakiness\/playwright/);
+});
+
 test('should generate perfect shards with dependent projects', async ({}, testInfo) => {
   const shards = await runPerfectShards(testInfo, {
     'setup.spec.ts': `
