@@ -238,7 +238,7 @@ export default class FlakinessReporter implements Reporter {
       }
     });
 
-    const { entries, projectDurations } = prepareShardableTestEntries(this._config!, this._rootSuite!, testCaseDurations);
+    const entries = prepareShardableTestEntries(this._config!, this._rootSuite!, testCaseDurations);
     // stable sort all entries.
     entries.sort((e1, e2) => {
       if (e1.duration !== e2.duration)
@@ -258,14 +258,19 @@ export default class FlakinessReporter implements Reporter {
     }));
 
     const addToShardDuration = (shard: Shard, entry: TestEntry) => {
-      const newProjects = setDifference(entry.projectDeps, shard.projects);
-      return Array.from(newProjects, proj => projectDurations.get(proj) ?? 0).reduce((acc, ms) => acc + ms, 0) + entry.duration;
+      let addedPrice = entry.duration;
+      for (const [proj, projDuration] of entry.deps) {
+        if (!shard.projects.has(proj))
+          addedPrice += projDuration;
+      }
+      return addedPrice;
     }
 
     const addShardEntry = (shard: Shard, entry: TestEntry) => {
       shard.entries.push(entry);
       shard.totalDuration += addToShardDuration(shard, entry);
-      shard.projects = setUnion(shard.projects, entry.projectDeps);
+      for (const proj of entry.deps.keys())
+        shard.projects.add(proj);
     }
 
     for (const testEntry of entries) {
@@ -327,13 +332,6 @@ function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
   return result;
 }
 
-function setUnion<T>(set: Set<T>, other: Set<T>): Set<T> {
-  const result = new Set<T>(set);
-  for (const value of other)
-    result.add(value);
-  return result;
-}
-
 type ShardRequest = { current: number, total: number, outputFile: string };
 
 function parseShardEnv(): ShardRequest | undefined {
@@ -351,7 +349,7 @@ function parseShardEnv(): ShardRequest | undefined {
   return { current, total, outputFile: fileValue };
 }
 
-export function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
+function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
   // We consider both dependencies and teardown as "dependencies".
   const projectDependencies = new Map<string, string[]>(config.projects.map(project => [project.name, [
     project.dependencies,
@@ -400,20 +398,22 @@ export function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite
       entry = {
         duration: 0,
         id,
-        projectDeps: leafProjectClosure.get(proj.name) ?? new Set(),
+        project: proj.name,
+        deps: new Map(Array.from(leafProjectClosure.get(proj.name) ?? new Set<string>(), proj => [proj, projectDurations.get(proj) ?? 0])),
       };
       testEntries.set(id, entry);
     }
     entry.duration += testCaseDurations.get(testCase) ?? defaultDuration;
   }
 
-  return { entries: Array.from(testEntries.values()), projectDurations };
+  return Array.from(testEntries.values());
 }
 
 type TestEntry = {
   id: string,
   duration: number,
-  projectDeps: Set<string>,
+  project: string,
+  deps: Map<string, number>,
 }
 
 function createTestEntryId(testCase: TestCase, rootDir: string): string {
