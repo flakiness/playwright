@@ -5,7 +5,7 @@ import assert from 'node:assert';
 import { execFile, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { durationFromWeightInTitle } from './fakeDurationsServer.js';
+import { durationFromWeightInTitle, startFakeDurationsServer } from './fakeDurationsServer.js';
 
 // On MacOS, the /tmp is a symlink to /private/tmp. This results
 // in stack traces using `/private/tmp`. This might confuse some
@@ -180,18 +180,17 @@ export async function runPerfectShards(
   }[]> {
   assert(Number.isInteger(shards) && shards >= 1, `shards must be a positive integer, got ${shards}`);
 
+  using durationsServer = await startFakeDurationsServer();
   const { targetDir, reportDir } = await initializeDirectoryWithTests(testInfo, files, {
     ...(options ?? {}),
+    endpoint: durationsServer.endpoint,
     token: options?.token ?? 'fake-token',
   }, playwrightConfig);
 
   const result: { totalWeight: number, report: FlakinessReport.Report }[] = [];
   for (let currentShard = 1; currentShard <= shards; ++currentShard) {
     fs.rmSync(reportDir, { recursive: true, force: true });
-    const log = await runFlakinessPlaywrightShard(targetDir, {
-      ...(extraEnv ?? {}),
-      FLAKINESS_TEST_DURATIONS_FROM_TITLES: '1',
-    }, `${currentShard}/${shards}`, cliArgs);
+    const log = await runFlakinessPlaywrightShard(targetDir, extraEnv, `${currentShard}/${shards}`, cliArgs);
     assert.strictEqual(log.exitCode, 0, log.stderr || log.stdout);
 
     const { report } = await readReport(reportDir);
