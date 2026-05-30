@@ -13,6 +13,9 @@ export async function fetchHistoricalDurations(
     flakinessEndpoint?: string,
   },
 ): Promise<FK.Report> {
+  if (process.env.FLAKINESS_TEST_DURATIONS_FROM_TITLES)
+    return report;
+
   const endpoint = (options.flakinessEndpoint ?? process.env.FLAKINESS_ENDPOINT ?? 'https://flakiness.io').replace(/\/+$/, '');
 
   let token = options.flakinessAccessToken;
