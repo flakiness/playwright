@@ -85,7 +85,7 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
     ],
   });
 
-  expect(shards.map(shard => shard.totalWeight)).toEqual([101, 201]);
+  expect(shards.map(shard => shard.totalWeight)).toEqual([151, 151]);
 });
 
 function reportTestCount(report: FlakinessReport.Report): number {
