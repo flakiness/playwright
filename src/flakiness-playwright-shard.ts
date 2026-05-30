@@ -44,7 +44,7 @@ async function main() {
       ...process.env,
       FLAKINESS_SHARD: `${parsed.shard.current}/${parsed.shard.total}`,
       FLAKINESS_SHARD_FILE: shardFile,
-    }, false);
+    });
     console.error(`Done ${formatDuration(Date.now() - startTime)}`);
     if (listExitCode !== 0)
       return finishWithPlaywrightFailure(listExitCode, 'failed to generate perfect shard');
@@ -55,7 +55,7 @@ async function main() {
     if (!hasArg(parsed.passthrough, '--pass-with-no-tests'))
       runArgs.unshift('--pass-with-no-tests');
 
-    return runPlaywright(playwrightCLI, runArgs, process.env, true);
+    return runPlaywright(playwrightCLI, runArgs, process.env);
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
@@ -134,7 +134,7 @@ function resolvePlaywrightCLI(): string {
   }
 }
 
-function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, inheritStdio: boolean): number {
+function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv): number {
   // Use only synchronous stdio handles (inherit/ignore) — never pipes. On Windows,
   // piped stdio is backed by libuv async handles, and Playwright's CLI ends the run by
   // calling process.exit(), which tears down the event loop while the pipe is still
@@ -144,7 +144,7 @@ function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, 
   const result = spawnSync(process.execPath, [cliPath, 'test', ...args], {
     cwd: process.cwd(),
     env,
-    stdio: inheritStdio ? 'inherit' : ['ignore', 'ignore', 'inherit'],
+    stdio: 'inherit',
   });
   if (typeof result.status === 'number')
     return result.status;
