@@ -24,25 +24,22 @@ export function parseShardEnv(): ShardRequest | undefined {
 
 export async function generatePerfectShard(shard: ShardRequest, config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
   const entries = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
-  // stable sort all entries.
-  entries.sort((e1, e2) => {
-    if (e1.duration !== e2.duration)
-      return e2.duration - e1.duration;
-    return e1.id < e2.id ? -1 : e1.id > e2.id ? 1 : 0;
-  });
+  // Since initially entry listing is stable, and node.js sorting is stable too,
+  // we can just rearrange them according to the duration.
+  entries.sort((e1, e2) => e2.duration - e1.duration);
 
   type Shard = {
-    entries: TestEntry[],
+    groups: ShardGroup[],
     totalDuration: number,
     projects: Set<string>,
   };
   const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
-    entries: [],
+    groups: [],
     totalDuration: 0,
     projects: new Set(),
   }));
 
-  const addToShardDuration = (shard: Shard, entry: TestEntry) => {
+  const addToShardDuration = (shard: Shard, entry: ShardGroup) => {
     let addedPrice = entry.duration;
     for (const [proj, projDuration] of entry.deps) {
       if (!shard.projects.has(proj))
@@ -51,8 +48,8 @@ export async function generatePerfectShard(shard: ShardRequest, config: FullConf
     return addedPrice;
   }
 
-  const addShardEntry = (shard: Shard, entry: TestEntry) => {
-    shard.entries.push(entry);
+  const addShardEntry = (shard: Shard, entry: ShardGroup) => {
+    shard.groups.push(entry);
     shard.totalDuration += addToShardDuration(shard, entry);
     for (const proj of entry.deps.keys())
       shard.projects.add(proj);
@@ -71,7 +68,9 @@ export async function generatePerfectShard(shard: ShardRequest, config: FullConf
     addShardEntry(shards[minShardIdx], testEntry);
   }
 
-  await fs.promises.writeFile(shard.outputFile, shards[shard.current - 1].entries.map(entry => entry.id).join('\n') + '\n');
+  const selectedShard = shards[shard.current - 1];
+  const testIds = selectedShard.groups.map(shard => shard.ids).flat();
+  await fs.promises.writeFile(shard.outputFile, testIds.join('\n') + '\n');
 }
 
 function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
@@ -120,34 +119,51 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
     projectDurations.set(project.name, (projectDurations.get(project.name) ?? 0) + (testCaseDurations.get(testCase) ?? defaultDuration));
   }
 
-  // Now, leaf tests that share the same TestEntryId should be merged together with combined duration.
-  // We cannot shard these.
-  const testEntries = new Map<string, TestEntry>();
+  // Group all tests into shard groups. Each shard group is identified either by
+  // a suite (an outermost serial suite), or a testCaseId (if tests are executed with repeat-each).
+  type ShardGroupId = Suite|string;
+  const shardGroups = new Map<ShardGroupId, ShardGroup>();
+
   for (const testCase of leafTests) {
     const proj = testCase.parent.project();
     if (!proj)
       continue;
-    const id = createTestEntryId(testCase, config.rootDir);
-    let entry = testEntries.get(id);
-    if (!entry) {
-      entry = {
-        duration: 0,
-        id,
-        project: proj.name,
-        deps: new Map(Array.from(leafProjectClosure.get(proj.name) ?? new Set<string>(), proj => [proj, projectDurations.get(proj) ?? 0])),
-      };
-      testEntries.set(id, entry);
-    }
-    entry.duration += testCaseDurations.get(testCase) ?? defaultDuration;
-  }
 
-  return Array.from(testEntries.values());
+    const testEntryId = createTestEntryId(testCase, config.rootDir);
+    const shardGroupId = outermostSerialSuite(testCase) ?? testEntryId;
+    let shardGroup = shardGroups.get(shardGroupId);
+    if (!shardGroup) {
+      shardGroup = {
+        deps: new Map(),
+        duration: 0,
+        ids: [],
+      }
+      shardGroups.set(shardGroupId, shardGroup);
+    }
+    shardGroup.ids.push(testEntryId);
+    shardGroup.duration += testCaseDurations.get(testCase) ?? defaultDuration;
+    for (const dep of leafProjectClosure.get(proj.name) ?? [])
+      shardGroup.deps.set(dep, projectDurations.get(dep) ?? 0);
+  }
+  return Array.from(shardGroups.values());
 }
 
-type TestEntry = {
-  id: string,
+// Playwright does not expose suite mode in reporter types, but native sharding
+// uses this runtime field to keep serial suites together.
+type SuiteWithParallelMode = Suite & { _parallelMode?: string };
+
+function outermostSerialSuite(testCase: TestCase): Suite | undefined {
+  let result: Suite | undefined;
+  for (let suite: Suite | undefined = testCase.parent; suite; suite = suite.parent) {
+    if ((suite as SuiteWithParallelMode)._parallelMode === 'serial')
+      result = suite;
+  }
+  return result;
+}
+
+type ShardGroup = {
+  ids: string[],
   duration: number,
-  project: string,
   deps: Map<string, number>,
 }
 

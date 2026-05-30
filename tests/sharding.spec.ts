@@ -73,6 +73,27 @@ test('should keep repeatEach instances of one test in one shard', async ({}, tes
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 2]);
 });
 
+test('should shard tests from serial suites', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test.describe.serial('serial group', () => {
+        test('w=7 alpha', async () => {});
+        test('w=1 beta', async () => {});
+        test('w=6 gamma', async () => {});
+        test('w=2 delta', async () => {});
+        test('w=5 epsilon', async () => {});
+        test('w=3 zeta', async () => {});
+        test('w=4 eta', async () => {});
+      });
+    `,
+  }, 2);
+
+  // All serial tests should end up in the same shard.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([28, 0]);
+});
+
 test('should reject reporter override for balanced sharding', async ({}, testInfo) => {
   await expect(runPerfectShards(testInfo, {
     'example.spec.ts': `
@@ -190,4 +211,13 @@ function reportTestCount(report: FlakinessReport.Report): number {
   let count = 0;
   ReportUtils.visitTests(report, test => count += test.attempts.length);
   return count;
+}
+
+function reportTestTitles(report: FlakinessReport.Report): string[] {
+  const titles: string[] = [];
+  ReportUtils.visitTests(report, test => {
+    for (const _attempt of test.attempts)
+      titles.push(test.title);
+  });
+  return titles;
 }
