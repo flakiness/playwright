@@ -13,6 +13,9 @@
       "require": "./lib/playwright-test.js"
     }
   },
+  "bin": {
+    "flakiness-playwright-shard": "./lib/flakiness-playwright-shard.js"
+  },
   "type": "module",
   "description": "A custom Playwright test reporter that generates Flakiness Reports from your Playwright test runs",
   "types": "./types/index.d.ts",

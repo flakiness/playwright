@@ -114,6 +114,33 @@ async function runPlaywright(
   });
 }
 
+async function runFlakinessPlaywrightShard(
+  targetDir: string,
+  extraEnv: Record<string, string> | undefined,
+  shard: string,
+  cliArgs: string[] = [],
+) {
+  const shardCli = path.join(PROJECT_ROOT, 'lib', 'flakiness-playwright-shard.js');
+  assert(fs.existsSync(shardCli), `missing flakiness-playwright-shard CLI at ${shardCli}`);
+  const env = {
+    ...process.env,
+    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
+    ...(extraEnv ?? {}),
+  };
+  delete (env as any)['CI'];
+  return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
+    execFile(process.execPath, [shardCli, `--shard=${shard}`, ...cliArgs], {
+      cwd: targetDir,
+      env,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      const exitCode = error ? (typeof (error as any).code === 'number' ? (error as any).code : 1) : 0;
+      resolve({ stdout, stderr, exitCode });
+    });
+  });
+}
+
 export async function generateFlakinessReport(
     testInfo: TestInfo,
     files: Record<string, string>,
@@ -161,16 +188,9 @@ export async function runPerfectShards(
 
   const result: { totalWeight: number, report: FlakinessReport.Report }[] = [];
   for (let currentShard = 1; currentShard <= shards; ++currentShard) {
-    const shardFile = path.join(targetDir, `shard_${currentShard.toString().padStart(3, '0')}.txt`);
-    await runPlaywright(targetDir, {
-      ...(extraEnv ?? {}),
-      FLAKINESS_SHARD: `${currentShard}/${shards}`,
-      FLAKINESS_SHARD_FILE: shardFile,
-    }, [...cliArgs, '--list']);
-    assert(fs.existsSync(shardFile), `failed to generate shard file ${shardFile}`);
-
     fs.rmSync(reportDir, { recursive: true, force: true });
-    await runPlaywright(targetDir, extraEnv, [...cliArgs, `--test-list=${shardFile}`, '--pass-with-no-tests']);
+    const log = await runFlakinessPlaywrightShard(targetDir, extraEnv, `${currentShard}/${shards}`, cliArgs);
+    assert.strictEqual(log.exitCode, 0, log.stderr || log.stdout);
 
     const { report } = await readReport(reportDir);
     result.push({ report, totalWeight: reportTotalWeight(report) });
