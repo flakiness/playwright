@@ -221,6 +221,9 @@ export default class FlakinessReporter implements Reporter {
         }
       });
       await generatePerfectShard(shardRequest, this._config, this._rootSuite, testCaseDurations);
+      // Workaround https://github.com/nodejs/node/issues/56645
+      if (process.platform === 'win32')
+        await new Promise(x => setTimeout(x, 100));
       return;
     }
 

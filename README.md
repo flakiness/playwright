@@ -9,6 +9,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Balanced Sharding](#balanced-sharding)
 - [Uploading Reports](#uploading-reports)
 - [Viewing Reports](#viewing-reports)
 - [Features](#features)
@@ -48,7 +49,9 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   reporter: [
-    ['@flakiness/playwright']
+    ['@flakiness/playwright', {
+      flakinessProject: 'my-org/my-project',
+    }]
   ],
 });
 ```
@@ -63,6 +66,37 @@ View the interactive report:
 
 ```bash
 npx flakiness show ./flakiness-report
+```
+
+## Balanced Sharding
+
+Balanced sharding uses historical test durations from Flakiness.io to generate Playwright test lists with more even shard runtimes.
+
+First, make sure the reporter is configured with your Flakiness.io project:
+
+```typescript
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [
+    ['@flakiness/playwright', {
+      flakinessProject: 'my-org/my-project',
+    }]
+  ],
+});
+```
+
+Then run each shard with `flakiness-playwright-shard` instead of `playwright test`:
+
+```bash
+npx flakiness-playwright-shard --shard=1/2
+npx flakiness-playwright-shard --shard=2/2
+```
+
+Any additional arguments are passed through to `playwright test`:
+
+```bash
+npx flakiness-playwright-shard --shard=1/2 --project=chromium tests/e2e
 ```
 
 ## Uploading Reports
