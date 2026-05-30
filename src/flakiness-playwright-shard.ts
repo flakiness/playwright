@@ -20,7 +20,6 @@ type ParsedArgs = {
 type RunResult = {
   code: number;
   signal: NodeJS.Signals | null;
-  stderr: string;
 };
 
 const usage = `Usage:
@@ -54,11 +53,8 @@ async function main() {
     console.error(`Done ${formatDuration(Date.now() - startTime)}`);
     if (listResult.code !== 0)
       return finishWithPlaywrightFailure(listResult, 'failed to generate perfect shard');
-    if (!fs.existsSync(shardFile)) {
-      if (listResult.stderr)
-        process.stderr.write(listResult.stderr);
+    if (!fs.existsSync(shardFile))
       throw new Error('failed to generate perfect shard: shard file was not created. Is @flakiness/playwright configured as a reporter?');
-    }
 
     const runArgs = [`--test-list=${shardFile}`, ...parsed.passthrough];
     if (!hasArg(parsed.passthrough, '--pass-with-no-tests'))
@@ -148,21 +144,22 @@ function resolvePlaywrightCLI(): string {
 
 function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, inheritStdio: boolean): Promise<RunResult> {
   return new Promise(resolve => {
+    // Use only synchronous stdio handles (inherit/ignore) — never pipes. On Windows,
+    // piped stdio is backed by libuv async handles, and Playwright's CLI ends the run by
+    // calling process.exit(), which tears down the event loop while the pipe is still
+    // flushing. That races into the `UV_HANDLE_CLOSING` assertion in libuv's win/async.c
+    // and fast-fails the child with 0xC0000409. For --list we suppress the test listing on
+    // stdout but keep stderr inherited so real errors still surface.
     const child = spawn(process.execPath, [cliPath, 'test', ...args], {
       cwd: process.cwd(),
       env,
-      stdio: inheritStdio ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+      stdio: inheritStdio ? 'inherit' : ['ignore', 'ignore', 'inherit'],
     });
-    let stderr = '';
-    child.stdout?.resume();
-    child.stderr?.on('data', chunk => stderr += chunk);
-    child.on('close', (code, signal) => resolve({ code: code ?? 1, signal, stderr }));
+    child.on('close', (code, signal) => resolve({ code: code ?? 1, signal }));
   });
 }
 
 function finishWithPlaywrightFailure(result: RunResult, message: string): number {
-  if (result.stderr)
-    process.stderr.write(result.stderr);
   if (result.signal) {
     console.error(`${message}: playwright exited with signal ${result.signal}`);
     return signalExitCode(result.signal);
