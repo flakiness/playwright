@@ -134,6 +134,7 @@ async function runFlakinessPlaywrightShard(
       env,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
+      timeout: 60_000,
     }, (error, stdout, stderr) => {
       const exitCode = error ? (typeof (error as any).code === 'number' ? (error as any).code : 1) : 0;
       resolve({ stdout, stderr, exitCode });

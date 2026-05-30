@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -15,11 +15,6 @@ type ParsedArgs = {
   shard?: Shard;
   passthrough: string[];
   help: boolean;
-};
-
-type RunResult = {
-  code: number;
-  signal: NodeJS.Signals | null;
 };
 
 const usage = `Usage:
@@ -45,14 +40,14 @@ async function main() {
   try {
     const startTime = Date.now();
     console.error(`Generating balanced shard ${parsed.shard.current}/${parsed.shard.total}...`);
-    const listResult = await runPlaywright(playwrightCLI, ['--list', ...parsed.passthrough], {
+    const listExitCode = runPlaywright(playwrightCLI, ['--list', ...parsed.passthrough], {
       ...process.env,
       FLAKINESS_SHARD: `${parsed.shard.current}/${parsed.shard.total}`,
       FLAKINESS_SHARD_FILE: shardFile,
     }, false);
     console.error(`Done ${formatDuration(Date.now() - startTime)}`);
-    if (listResult.code !== 0)
-      return finishWithPlaywrightFailure(listResult, 'failed to generate perfect shard');
+    if (listExitCode !== 0)
+      return finishWithPlaywrightFailure(listExitCode, 'failed to generate perfect shard');
     if (!fs.existsSync(shardFile))
       throw new Error('failed to generate perfect shard: shard file was not created. Is @flakiness/playwright configured as a reporter?');
 
@@ -60,10 +55,7 @@ async function main() {
     if (!hasArg(parsed.passthrough, '--pass-with-no-tests'))
       runArgs.unshift('--pass-with-no-tests');
 
-    const runResult = await runPlaywright(playwrightCLI, runArgs, process.env, true);
-    if (runResult.signal)
-      return signalExitCode(runResult.signal);
-    return runResult.code;
+    return runPlaywright(playwrightCLI, runArgs, process.env, true);
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
@@ -142,30 +134,28 @@ function resolvePlaywrightCLI(): string {
   }
 }
 
-function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, inheritStdio: boolean): Promise<RunResult> {
-  return new Promise(resolve => {
-    // Use only synchronous stdio handles (inherit/ignore) — never pipes. On Windows,
-    // piped stdio is backed by libuv async handles, and Playwright's CLI ends the run by
-    // calling process.exit(), which tears down the event loop while the pipe is still
-    // flushing. That races into the `UV_HANDLE_CLOSING` assertion in libuv's win/async.c
-    // and fast-fails the child with 0xC0000409. For --list we suppress the test listing on
-    // stdout but keep stderr inherited so real errors still surface.
-    const child = spawn(process.execPath, [cliPath, 'test', ...args], {
-      cwd: process.cwd(),
-      env,
-      stdio: inheritStdio ? 'inherit' : ['ignore', 'ignore', 'inherit'],
-    });
-    child.on('close', (code, signal) => resolve({ code: code ?? 1, signal }));
+function runPlaywright(cliPath: string, args: string[], env: NodeJS.ProcessEnv, inheritStdio: boolean): number {
+  // Use only synchronous stdio handles (inherit/ignore) — never pipes. On Windows,
+  // piped stdio is backed by libuv async handles, and Playwright's CLI ends the run by
+  // calling process.exit(), which tears down the event loop while the pipe is still
+  // flushing. That races into the `UV_HANDLE_CLOSING` assertion in libuv's win/async.c.
+  // The wrapper runs Playwright sequentially, so spawnSync keeps the implementation simple
+  // and avoids waiting on async child-process handles.
+  const result = spawnSync(process.execPath, [cliPath, 'test', ...args], {
+    cwd: process.cwd(),
+    env,
+    stdio: inheritStdio ? 'inherit' : ['ignore', 'ignore', 'inherit'],
   });
+  if (typeof result.status === 'number')
+    return result.status;
+  if (result.signal)
+    return signalExitCode(result.signal);
+  return 1;
 }
 
-function finishWithPlaywrightFailure(result: RunResult, message: string): number {
-  if (result.signal) {
-    console.error(`${message}: playwright exited with signal ${result.signal}`);
-    return signalExitCode(result.signal);
-  }
-  console.error(`${message}: playwright exited with code ${result.code}`);
-  return result.code;
+function finishWithPlaywrightFailure(exitCode: number, message: string): number {
+  console.error(`${message}: playwright exited with code ${exitCode}`);
+  return exitCode;
 }
 
 function signalExitCode(signal: NodeJS.Signals): number {
