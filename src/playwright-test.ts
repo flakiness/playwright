@@ -14,7 +14,6 @@ import {
 import { BrowserType } from '@playwright/test';
 import type {
   FullConfig,
-  FullProject,
   FullResult,
   Reporter,
   Suite, TestCase, TestError, TestResult
@@ -40,25 +39,6 @@ function parseDurationMS(value: number) {
     throw new Error(`Duration cannot be less than 0, found ${value}`);
   return (value|0) as FK.DurationMS;
 }
-
-async function existsAsync(aPath: string) {
-  return fs.promises.stat(aPath).then(() => true).catch(e => false);
-}
-
-type ProcessingContext = {
-  project2environmentIdx: Map<FullProject, number>,
-  worktree: GitWorktree,
-  attachments: Map<string, ReportUtils.Attachment>,
-  // Cache FK attachments keyed by the PW Attachment object.
-  // This is required since Playwright Test reports the same attachment objects in both
-  // test attachment list AND in test steps, IF they're attributed to some step.
-  // This caching allows us to save on I/O operations.
-  attachmentsCache: Map<PwAttachment, Promise<FK.Attachment|undefined>>,
-  unaccessibleAttachmentPaths: string[],
-}
-
-
-type PwAttachment = TestResult['attachments'][number];
 
 type OpenMode = 'always' | 'never' | 'on-failure';
 
@@ -258,47 +238,55 @@ export default class FlakinessReporter implements Reporter {
       }
     });
 
-    // Default duration should be either P50 if we have SOME data, or just 1 second otherwise.
-    const defaultDuration = testCaseDurations.size > 0 ? Array.from(testCaseDurations.values()).sort((a, b) => a - b)[testCaseDurations.size / 2|0] : 1000;
-
-    // The sharding operates on "tests" - a source location of test + a project it runs at. The same test can have
-    // multiple test cases, i.e. when they're executed with `--repeat-each`.
-    // Since when sharding we can select either all or nothing of these tests,
-    // we accumulate Test's durations across the same test cases.
-    const testDurations = new Map<TestEntry, number>();
-    const rootDir = this._config!.rootDir;
-    for (const test of (this._rootSuite?.allTests() ?? [])) {
-      const entry = createTestEntry(test, rootDir);
-      testDurations.set(entry, (testDurations.get(entry) ?? 0) + (testCaseDurations.get(test) ?? defaultDuration));
-    }
-    const allDurations: [TestEntry, number][] = Array.from(testDurations).sort(([t1, d1], [t2, d2]) => {
-      // Make sure this sort is stable & deterministic so that different machines
-      // yield exactly the same shards.
-      if (d2 !== d1)
-        return d2 - d1;
-      return t1 < t2 ? -1 : t1 > t2 ? 1 : 0;
-    });
+    const entries = prepareShardableTestEntries(this._config!, this._rootSuite!, testCaseDurations);
+    // stable sort all entries.
+    entries.sort((e1, e2) => {
+      if (e1.duration !== e2.duration)
+        return e2.duration - e1.duration;
+      return e1.id < e2.id ? -1 : e1.id > e2.id ? 1 : 0;
+    })
 
     type Shard = {
       entries: TestEntry[],
       totalDuration: number,
+      projects: Set<string>,
     };
     const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
       entries: [],
       totalDuration: 0,
+      projects: new Set(),
     }));
 
-    for (const [testEntry, duration] of allDurations) {
-      let minShardIdx = 0;
-      for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
-        if (shards[shardIdx].totalDuration < shards[minShardIdx].totalDuration)
-          minShardIdx = shardIdx;
+    const addToShardDuration = (shard: Shard, entry: TestEntry) => {
+      let addedPrice = entry.duration;
+      for (const [proj, projDuration] of entry.deps) {
+        if (!shard.projects.has(proj))
+          addedPrice += projDuration;
       }
-      shards[minShardIdx].entries.push(testEntry);
-      shards[minShardIdx].totalDuration += duration;
+      return addedPrice;
     }
 
-    await fs.promises.writeFile(shard.outputFile, shards[shard.current - 1].entries.join('\n') + '\n');
+    const addShardEntry = (shard: Shard, entry: TestEntry) => {
+      shard.entries.push(entry);
+      shard.totalDuration += addToShardDuration(shard, entry);
+      for (const proj of entry.deps.keys())
+        shard.projects.add(proj);
+    }
+
+    for (const testEntry of entries) {
+      let minShardIdx = 0;
+      let minShardDuration = shards[0].totalDuration + addToShardDuration(shards[0], testEntry);
+      for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
+        const d = shards[shardIdx].totalDuration + addToShardDuration(shards[shardIdx], testEntry);
+        if (d < minShardDuration) {
+          minShardIdx = shardIdx;
+          minShardDuration = d;
+        }
+      }
+      addShardEntry(shards[minShardIdx], testEntry);
+    }
+
+    await fs.promises.writeFile(shard.outputFile, shards[shard.current - 1].entries.map(entry => entry.id).join('\n') + '\n');
   }
 
   async onExit(): Promise<void> {
@@ -335,6 +323,15 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
+function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
+  const result = new Set<T>();
+  for (const value of set) {
+    if (!other.has(value))
+      result.add(value);
+  }
+  return result;
+}
+
 type ShardRequest = { current: number, total: number, outputFile: string };
 
 function parseShardEnv(): ShardRequest | undefined {
@@ -352,13 +349,75 @@ function parseShardEnv(): ShardRequest | undefined {
   return { current, total, outputFile: fileValue };
 }
 
-type Brand<T, Brand extends string> = T & {
-  readonly [B in Brand as `__${B}_brand`]: never;
-};
+function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
+  // We consider both dependencies and teardown as "dependencies".
+  const scheduledProjects = new Set(rootSuite.allTests().map(test => test.parent.project()).filter(x => x !== undefined));
+  const projectDependencies = new Map<string, string[]>(Array.from(scheduledProjects).map(project => [project.name, [
+    project.dependencies,
+    project.teardown ? [project.teardown] : [],
+  ].flat()]));
+  const leafProjects = setDifference(new Set(projectDependencies.keys()), new Set(Array.from(projectDependencies.values()).flat()))
+  const leafTests = rootSuite.allTests().filter(test => {
+    const project = test.parent.project();
+    return project && leafProjects.has(project.name);
+  });
 
-type TestEntry = Brand<string, 'TestEntry'>;
+  const visit = (project: string, visited: Set<string> = new Set()) => {
+    visited.add(project);
+    for (const dep of projectDependencies.get(project) ?? [])
+      visit(dep, visited);
+    return visited;
+  }
 
-function createTestEntry(testCase: TestCase, rootDir: string): TestEntry {
+  const leafProjectClosure = new Map<string, Set<string>>(Array.from(leafProjects, proj => {
+    const allDeps = visit(proj);
+    allDeps.delete(proj);
+    return [proj, allDeps]
+  }));
+
+  // Default duration should be either P50 if we have SOME data, or just 1 second otherwise.
+  const defaultDuration = testCaseDurations.size > 0 ? Array.from(testCaseDurations.values()).sort((a, b) => a - b)[testCaseDurations.size / 2|0] : 1000;
+
+  const projectDurations = new Map<string, number>();
+  for (const testCase of rootSuite.allTests()) {
+    const project = testCase.parent.project();
+    if (!project)
+      continue;
+    projectDurations.set(project.name, (projectDurations.get(project.name) ?? 0) + (testCaseDurations.get(testCase) ?? defaultDuration));
+  }
+
+  // Now, leaf tests that share the same TestEntryId should be merged together with combined duration.
+  // We cannot shard these.
+  const testEntries = new Map<string, TestEntry>();
+  for (const testCase of leafTests) {
+    const proj = testCase.parent.project();
+    if (!proj)
+      continue;
+    const id = createTestEntryId(testCase, config.rootDir);
+    let entry = testEntries.get(id);
+    if (!entry) {
+      entry = {
+        duration: 0,
+        id,
+        project: proj.name,
+        deps: new Map(Array.from(leafProjectClosure.get(proj.name) ?? new Set<string>(), proj => [proj, projectDurations.get(proj) ?? 0])),
+      };
+      testEntries.set(id, entry);
+    }
+    entry.duration += testCaseDurations.get(testCase) ?? defaultDuration;
+  }
+
+  return Array.from(testEntries.values());
+}
+
+type TestEntry = {
+  id: string,
+  duration: number,
+  project: string,
+  deps: Map<string, number>,
+}
+
+function createTestEntryId(testCase: TestCase, rootDir: string): string {
   // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
   // Playwright's --test-list parser expects: `[projectName] › relativeFile › title1 › ... › testTitle`,
   // with `›` (U+203A) as the delimiter and the file path relative to config.rootDir (posix).
@@ -370,5 +429,5 @@ function createTestEntry(testCase: TestCase, rootDir: string): TestEntry {
   if (projectName)
     segments.push(`[${projectName}]`);
   segments.push([relativeFile, testCase.location.line, testCase.location.column].join(':'), ...titles);
-  return segments.join(' › ') as TestEntry;
+  return segments.join(' › ');
 }
