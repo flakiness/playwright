@@ -40,8 +40,6 @@ export async function fetchHistoricalDurations(
   const compressed = await brotliCompressAsync(Buffer.from(JSON.stringify(report)));
   const uploadResponse = await fetch(createRes.value.uploadUrl, {
     method: 'PUT',
-    // Workaround https://github.com/nodejs/node/issues/56645
-    keepalive: process.platform !== 'win32',
     headers: {
       'Content-Type': 'application/json',
       'Content-Encoding': 'br',
@@ -62,10 +60,7 @@ export async function fetchHistoricalDurations(
 
   const deadlineMs = Date.now() + 1000 * 60;
   while (Date.now() < deadlineMs) {
-    const downloadResponse = await fetch(submitRes.value.downloadUrl, {
-      // Workaround https://github.com/nodejs/node/issues/56645
-      keepalive: process.platform !== 'win32',
-    });
+    const downloadResponse = await fetch(submitRes.value.downloadUrl);
     if (!downloadResponse.ok) {
       await new Promise(x => setTimeout(x, 1000));
       continue;
@@ -83,8 +78,6 @@ async function postJSON<T>(url: string, bearer: string, body: unknown): Promise<
   try {
     const response = await fetch(url, {
       method: 'POST',
-      // Workaround https://github.com/nodejs/node/issues/56645
-      keepalive: process.platform !== 'win32',
       headers: {
         'Authorization': `Bearer ${bearer}`,
         'Content-Type': 'application/json',
