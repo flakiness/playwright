@@ -111,6 +111,8 @@ function assertWrapperOwnedArgsAbsent(args: string[]) {
     const arg = args[i];
     if (arg === '--list' || arg.startsWith('--test-list=') || arg === '--test-list')
       throw new Error(`"${arg}" is managed by flakiness-playwright-shard and cannot be passed explicitly`);
+    if (arg === '--shard' || arg.startsWith('--shard='))
+      throw new Error(`"${arg}" is managed by flakiness-playwright-shard and cannot be passed as a Playwright argument`);
     if (arg === '--reporter' || arg.startsWith('--reporter='))
       throw new Error(`"${arg}" replaces the configured reporters and would disable @flakiness/playwright during shard generation`);
   }
