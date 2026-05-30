@@ -29,7 +29,7 @@ export async function generatePerfectShard(shard: ShardRequest, config: FullConf
     if (e1.duration !== e2.duration)
       return e2.duration - e1.duration;
     return e1.id < e2.id ? -1 : e1.id > e2.id ? 1 : 0;
-  })
+  });
 
   type Shard = {
     entries: TestEntry[],
