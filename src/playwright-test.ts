@@ -3,13 +3,14 @@ import {
 } from '@flakiness/flakiness-report';
 import {
   CPUUtilization,
+  fetchTestDurations,
   GitWorktree,
   RAMUtilization,
   ReportUtils,
   showReport,
   showReportCommand,
   uploadReport,
-  writeReport
+  writeReport,
 } from '@flakiness/sdk';
 import { BrowserType } from '@playwright/test';
 import type {
@@ -21,7 +22,6 @@ import type {
 import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
-import { fetchHistoricalDurations } from './durations.js';
 import { buildReport, computeFKTestId } from './reportBuilder.js';
 import { generatePerfectShard, parseShardEnv } from './sharding.js';
 
@@ -205,7 +205,7 @@ export default class FlakinessReporter implements Reporter {
     const shardRequest = parseShardEnv();
     if (this._options._mode === 'list' && shardRequest) {
       // Fetch durations from the Flakiness.io
-      const durationsReport = await fetchHistoricalDurations(report, {
+      const durationsReport = await fetchTestDurations(report, {
         flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
         flakinessEndpoint: this._options.endpoint,
       });
