@@ -39,12 +39,12 @@
     "node": "^20.17.0 || >=22.9.0"
   },
   "devDependencies": {
-    "@flakiness/playwright": "^1.6.0",
-    "@playwright/test": "^1.57.0",
-    "@types/node": "^25.0.3",
-    "esbuild": "^0.27.2",
+    "@flakiness/playwright": "^1.11.0",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.1",
+    "esbuild": "^0.27.7",
     "kubik": "^0.24.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3"
   },
   "dependencies": {
