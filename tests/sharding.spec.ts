@@ -73,7 +73,7 @@ test('should keep repeatEach instances of one test in one shard', async ({}, tes
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 2]);
 });
 
-test('should shard tests from serial suites', async ({}, testInfo) => {
+test('should keep tests from serial suites in one shard', async ({}, testInfo) => {
   const shards = await runPerfectShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
@@ -92,6 +92,78 @@ test('should shard tests from serial suites', async ({}, testInfo) => {
 
   // All serial tests should end up in the same shard.
   expect(shards.map(shard => shard.totalWeight)).toEqual([28, 0]);
+  // Make sure tests inside shard groups retain their order.
+  expect(reportTestTitles(shards[0].report)).toEqual([
+    'w=7 alpha',
+    'w=1 beta',
+    'w=6 gamma',
+    'w=2 delta',
+    'w=5 epsilon',
+    'w=3 zeta',
+    'w=4 eta',
+  ]);
+});
+
+test('should keep serial suite tests together while sharding standalone tests', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=8 standalone alpha', async () => {});
+
+      test.describe.serial('serial group', () => {
+        test('w=5 serial alpha', async () => {});
+        test('w=5 serial beta', async () => {});
+      });
+
+      test('w=8 standalone beta', async () => {});
+      test('w=8 standalone gamma', async () => {});
+    `,
+  }, 2);
+
+  // Playwright's --test-list selects tests, but does not preserve list order.
+  expect(shards.map(shard => reportTestTitles(shard.report).sort())).toEqual([
+    [
+      'w=5 serial alpha',
+      'w=5 serial beta',
+      'w=8 standalone gamma',
+    ],
+    [
+      'w=8 standalone alpha',
+      'w=8 standalone beta',
+    ],
+  ]);
+});
+
+test('should keep nested tests from configured serial suites in one shard', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test.describe('configured serial group', () => {
+        test.describe.configure({ mode: 'serial' });
+
+        test('w=3 serial outer', async () => {});
+        test.describe('nested group', () => {
+          test('w=9 serial nested', async () => {});
+        });
+      });
+
+      test('w=10 standalone alpha', async () => {});
+      test('w=10 standalone beta', async () => {});
+    `,
+  }, 2);
+
+  expect(shards.map(shard => reportTestTitles(shard.report))).toEqual([
+    [
+      'w=3 serial outer',
+      'w=9 serial nested',
+    ],
+    [
+      'w=10 standalone alpha',
+      'w=10 standalone beta',
+    ],
+  ]);
 });
 
 test('should reject reporter override for balanced sharding', async ({}, testInfo) => {

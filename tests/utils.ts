@@ -129,7 +129,7 @@ async function runFlakinessPlaywrightShard(
   };
   delete (env as any)['CI'];
   return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
-    execFile(process.execPath, [shardCli, `--shard=${shard}`, ...cliArgs], {
+    execFile(process.execPath, [shardCli, `--shard=${shard}`, `--workers=1`, ...cliArgs], {
       cwd: targetDir,
       env,
       encoding: 'utf-8',
