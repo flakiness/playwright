@@ -12,8 +12,8 @@ importers:
         specifier: ^0.34.0
         version: 0.34.0(zod@4.4.3)
       '@flakiness/sdk':
-        specifier: ^3.3.0
-        version: 3.3.0(@flakiness/flakiness-report@0.34.0(zod@4.4.3))
+        specifier: ^3.3.1
+        version: 3.3.1(@flakiness/flakiness-report@0.34.0(zod@4.4.3))
     devDependencies:
       '@flakiness/playwright':
         specifier: ^1.11.0
@@ -367,6 +367,12 @@ packages:
 
   '@flakiness/sdk@3.3.0':
     resolution: {integrity: sha512-MvoccwIcFMj+HERbWWDeMQ740rCkyT+WOqGVUMI4YKpzFIxrj/QQpVVCyU9dwL90caa/FAZRGa1yNfTGcDed2A==}
+    engines: {node: ^20.17.0 || >=22.9.0}
+    peerDependencies:
+      '@flakiness/flakiness-report': '>=0.26.0 <1.0.0'
+
+  '@flakiness/sdk@3.3.1':
+    resolution: {integrity: sha512-LrV+g246Oo9MSpVKU9bY/UHOYglwcqr0e4I6Vz0RGhHtOyrR2xZRCVzsM4crItDvNbIW4/9AJSRwQ5nptCykvw==}
     engines: {node: ^20.17.0 || >=22.9.0}
     peerDependencies:
       '@flakiness/flakiness-report': '>=0.26.0 <1.0.0'
@@ -952,6 +958,17 @@ snapshots:
       - zod
 
   '@flakiness/sdk@3.3.0(@flakiness/flakiness-report@0.34.0(zod@4.4.3))':
+    dependencies:
+      '@flakiness/flakiness-report': 0.34.0(zod@4.4.3)
+      debug: 4.4.3
+      open: 10.2.0
+      stable-hash: 0.0.6
+      which: 6.0.1
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@flakiness/sdk@3.3.1(@flakiness/flakiness-report@0.34.0(zod@4.4.3))':
     dependencies:
       '@flakiness/flakiness-report': 0.34.0(zod@4.4.3)
       debug: 4.4.3
