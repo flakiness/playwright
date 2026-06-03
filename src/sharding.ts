@@ -23,54 +23,159 @@ export function parseShardEnv(): ShardRequest | undefined {
 }
 
 export async function generatePerfectShard(shard: ShardRequest, config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
-  const entries = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
-  // Since initially entry listing is stable, and node.js sorting is stable too,
-  // we can just rearrange them according to the duration.
-  entries.sort((e1, e2) => e2.duration - e1.duration);
+  const groups = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
+  const shards = assignGroupsToShards(groups, shard.total);
+  const testIds = shards[shard.current - 1].map(group => group.ids).flat();
+  await fs.promises.writeFile(shard.outputFile, testIds.join('\n') + '\n');
+}
 
-  type Shard = {
-    groups: ShardGroup[],
-    totalDuration: number,
-    projects: Set<string>,
-  };
-  const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
+// A family unites all shard groups that share the same dependency closure:
+// whichever shard runs any of its groups must also run the `deps` projects
+// in full, paying the `setup` price on top of the group durations.
+type Family = {
+  key: string,
+  deps: Map<string, number>,
+  setup: number,
+  work: number,
+  groups: ShardGroup[],
+};
+
+type Shard = {
+  load: number,
+  projects: Set<string>,
+  groups: ShardGroup[],
+};
+
+// Distributes shard groups over `shardCount` shards, minimizing the slowest shard.
+// See docs/sharding.md for the description and worked examples.
+//
+// Groups are merged into families by dependency closure. Families are placed one
+// by one, the most expensive setup first. Each family decides how many shards to
+// span — splitting family work k ways re-runs its dependency projects on every
+// extra shard, so wider spans must pay for themselves — then picks the shards
+// (preferring ones that already run its dependencies) and LPT-distributes its
+// groups over them. Zero-setup families are placed last and act as filler that
+// evens out the shards; without any dependencies the whole algorithm degenerates
+// to classic LPT.
+function assignGroupsToShards(groups: ShardGroup[], shardCount: number): ShardGroup[][] {
+  const families = new Map<string, Family>();
+  for (const group of groups) {
+    const key = Array.from(group.deps.keys()).sort().join('\n');
+    let family = families.get(key);
+    if (!family) {
+      family = {
+        key,
+        deps: group.deps,
+        setup: sum(group.deps.values()),
+        work: 0,
+        groups: [],
+      };
+      families.set(key, family);
+    }
+    family.work += group.duration;
+    family.groups.push(group);
+  }
+  const orderedFamilies = Array.from(families.values()).sort((f1, f2) =>
+    (f2.setup - f1.setup) || (f2.work - f1.work) || (f1.key < f2.key ? -1 : 1));
+
+  const shards: Shard[] = Array.from({ length: shardCount }, () => ({
+    load: 0,
+    projects: new Set<string>(),
     groups: [],
-    totalDuration: 0,
-    projects: new Set(),
   }));
 
-  const addToShardDuration = (shard: Shard, entry: ShardGroup) => {
-    let addedPrice = entry.duration;
-    for (const [proj, projDuration] of entry.deps) {
-      if (!shard.projects.has(proj))
-        addedPrice += projDuration;
+  // The dependency time the shard would have to add to run the given projects.
+  const missingSetup = (shard: Shard, deps: Map<string, number>) => {
+    let result = 0;
+    for (const [project, duration] of deps) {
+      if (!shard.projects.has(project))
+        result += duration;
     }
-    return addedPrice;
-  }
+    return result;
+  };
 
-  const addShardEntry = (shard: Shard, entry: ShardGroup) => {
-    shard.groups.push(entry);
-    shard.totalDuration += addToShardDuration(shard, entry);
-    for (const proj of entry.deps.keys())
-      shard.projects.add(proj);
-  }
+  let remainingWork = sum(orderedFamilies.map(family => family.work));
 
-  for (const testEntry of entries) {
-    let minShardIdx = 0;
-    let minShardDuration = shards[0].totalDuration + addToShardDuration(shards[0], testEntry);
-    for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
-      const d = shards[shardIdx].totalDuration + addToShardDuration(shards[shardIdx], testEntry);
-      if (d < minShardDuration) {
-        minShardIdx = shardIdx;
-        minShardDuration = d;
+  for (const [familyIndex, family] of orderedFamilies.entries()) {
+    // Estimate the total work across all shards once everything is placed:
+    // current shard loads, all unplaced groups, and every dependency project
+    // that is not running anywhere yet, counted once.
+    const loadsSum = sum(shards.map(shard => shard.load));
+    const pendingDeps = new Map<string, number>();
+    for (const futureFamily of orderedFamilies.slice(familyIndex)) {
+      for (const [dep, duration] of futureFamily.deps) {
+        if (!shards.some(shard => shard.projects.has(dep)))
+          pendingDeps.set(dep, duration);
       }
     }
-    addShardEntry(shards[minShardIdx], testEntry);
+    const estimatedTotal = loadsSum + remainingWork + sum(pendingDeps.values());
+
+    // Decide how many shards the family spans. Both bounds limit the makespan:
+    // - the best possible load of a shard hosting 1/k of the family,
+    // - the average shard load, inflated by the k - 1 extra setup copies.
+    // More shards relieve the first bound but inflate the second one. On a tie
+    // prefer the wider span (only possible with a zero setup) for parallelism.
+    const maxSpan = Math.min(shardCount, family.groups.length);
+    let span = 1;
+    let spanCost = Infinity;
+    for (let k = 1; k <= maxSpan; ++k) {
+      const cost = Math.max(
+        family.setup + family.work / k,
+        (estimatedTotal + (k - 1) * family.setup) / shardCount);
+      if (cost <= spanCost) {
+        span = k;
+        spanCost = cost;
+      }
+    }
+
+    // Choose the shards to span: the same two bounds, now per shard. Through
+    // `missing`, shards already running some of the family's dependencies are
+    // preferred over equally loaded ones. Sorting is stable, so equal scores
+    // resolve to the lowest shard index, keeping the assignment deterministic.
+    const scoredShards = shards.map(shard => {
+      const missing = missingSetup(shard, family.deps);
+      return {
+        shard,
+        score: Math.max(
+          shard.load + missing + family.work / span,
+          (loadsSum + missing + remainingWork) / shardCount),
+      };
+    });
+    scoredShards.sort((s1, s2) => s1.score - s2.score);
+    const candidates = scoredShards.slice(0, span).map(scored => scored.shard);
+
+    // Classic LPT over the chosen shards: largest groups first, each group goes
+    // where it ends up the cheapest. A shard pays the family setup only when
+    // a group actually lands on it. Group listing order is stable and so is the
+    // sort, which keeps equal-duration groups in listing order.
+    const orderedGroups = family.groups.slice().sort((g1, g2) => g2.duration - g1.duration);
+    for (const group of orderedGroups) {
+      let target = candidates[0];
+      let targetLoad = Infinity;
+      for (const candidate of candidates) {
+        const load = candidate.load + missingSetup(candidate, group.deps) + group.duration;
+        if (load < targetLoad) {
+          target = candidate;
+          targetLoad = load;
+        }
+      }
+      target.load = targetLoad;
+      target.groups.push(group);
+      for (const dep of group.deps.keys())
+        target.projects.add(dep);
+    }
+
+    remainingWork -= family.work;
   }
 
-  const selectedShard = shards[shard.current - 1];
-  const testIds = selectedShard.groups.map(shard => shard.ids).flat();
-  await fs.promises.writeFile(shard.outputFile, testIds.join('\n') + '\n');
+  return shards.map(shard => shard.groups);
+}
+
+function sum(values: Iterable<number>): number {
+  let result = 0;
+  for (const value of values)
+    result += value;
+  return result;
 }
 
 function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {

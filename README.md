@@ -70,7 +70,7 @@ npx flakiness show ./flakiness-report
 
 ## Balanced Sharding
 
-Balanced sharding uses historical test durations from Flakiness.io to generate Playwright test lists with more even shard runtimes.
+Balanced sharding uses historical test durations from Flakiness.io to generate Playwright test lists with more even shard runtimes. Serial suites stay on a single shard, and project dependencies (setup/teardown projects) are consolidated to avoid re-running them on every shard — see [docs/sharding.md](./docs/sharding.md) for the algorithm.
 
 First, make sure the reporter is configured with your Flakiness.io project:
 
