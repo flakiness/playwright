@@ -213,7 +213,11 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
     ],
   });
 
-  expect(shards.map(shard => shard.totalWeight)).toEqual([151, 151]);
+  // Splitting the two cheap "app" tests across both shards would run the heavy
+  // w=100 setup twice (151 / 151). Instead we keep them together so setup runs
+  // once, and balance the 100 unit tests around it: 100 (setup + 2 app) vs 100
+  // units.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([102, 100]);
 });
 
 test('should shard dependency projects selected with project filter', async ({}, testInfo) => {
@@ -275,8 +279,38 @@ test('should generate perfect shards with teardown projects', async ({}, testInf
     ],
   });
 
-  // The best sharding here would be 110 / 110.
-  expect(shards.map(shard => shard.totalWeight)).toEqual([160, 160]);
+  // The setup (40) + teardown (60) only pay off when the 10 app tests stay on
+  // one shard: that shard runs setup + app + teardown = 110, while the other
+  // shard runs all 110 unit tests = 110. Splitting app would duplicate the
+  // 100-weight setup/teardown and yield 160 / 160.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([110, 110]);
+});
+
+test('should spread a heavy dependent project across shards', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=100 setup', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 400; ++i)
+        test('w=1 app-' + i, async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+    ],
+  });
+
+  // The app work (400) dwarfs the setup (100), so paying setup twice is worth
+  // it: each shard runs setup (100) + 200 app tests = 300, beating the
+  // keep-together makespan of 500.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([300, 300]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([201, 201]);
 });
 
 function reportTestCount(report: FlakinessReport.Report): number {

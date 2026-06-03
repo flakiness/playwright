@@ -1,3 +1,5 @@
+// Balanced, duration-aware sharding. See docs/sharding.md for the heuristic and
+// the cost model that motivate this implementation.
 import type {
   FullConfig,
   Suite, TestCase
@@ -23,53 +25,117 @@ export function parseShardEnv(): ShardRequest | undefined {
 }
 
 export async function generatePerfectShard(shard: ShardRequest, config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
-  const entries = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
-  // Since initially entry listing is stable, and node.js sorting is stable too,
-  // we can just rearrange them according to the duration.
-  entries.sort((e1, e2) => e2.duration - e1.duration);
+  const groups = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
 
   type Shard = {
     groups: ShardGroup[],
     totalDuration: number,
     projects: Set<string>,
   };
-  const shards: Shard[] = Array(shard.total).fill(0).map(() => ({
+  const shards: Shard[] = Array.from({ length: shard.total }, () => ({
     groups: [],
     totalDuration: 0,
-    projects: new Set(),
+    projects: new Set<string>(),
   }));
 
-  const addToShardDuration = (shard: Shard, entry: ShardGroup) => {
-    let addedPrice = entry.duration;
-    for (const [proj, projDuration] of entry.deps) {
-      if (!shard.projects.has(proj))
-        addedPrice += projDuration;
+  // Cost of running a set of dependency projects on a shard. Dependency
+  // (setup/teardown) projects are re-run on every shard that needs them, so we
+  // only charge for the ones not already present.
+  const dependencyCost = (target: Shard, deps: Map<string, number>) => {
+    let cost = 0;
+    for (const [project, duration] of deps) {
+      if (!target.projects.has(project))
+        cost += duration;
     }
-    return addedPrice;
+    return cost;
+  };
+
+  const placeGroup = (target: Shard, group: ShardGroup) => {
+    target.totalDuration += group.duration + dependencyCost(target, group.deps);
+    for (const project of group.deps.keys())
+      target.projects.add(project);
+    target.groups.push(group);
+  };
+
+  // Group shardable entries into clusters that share the exact same set of
+  // dependency projects. Tests in one cluster pay for their setup together, so
+  // we want to balance them as a unit and avoid duplicating that setup more
+  // than necessary.
+  type Cluster = {
+    groups: ShardGroup[],
+    deps: Map<string, number>,
+    work: number,
+    setupCost: number,
+    spread: number,
+  };
+  const clusters = new Map<string, Cluster>();
+  for (const group of groups) {
+    const signature = Array.from(group.deps.keys()).sort().join('\0');
+    let cluster = clusters.get(signature);
+    if (!cluster) {
+      cluster = { groups: [], deps: group.deps, work: 0, setupCost: 0, spread: 0 };
+      clusters.set(signature, cluster);
+    }
+    cluster.groups.push(group);
+    cluster.work += group.duration;
   }
 
-  const addShardEntry = (shard: Shard, entry: ShardGroup) => {
-    shard.groups.push(entry);
-    shard.totalDuration += addToShardDuration(shard, entry);
-    for (const proj of entry.deps.keys())
-      shard.projects.add(proj);
+  // Decide how many shards each cluster should be spread across.
+  for (const cluster of clusters.values()) {
+    cluster.setupCost = Array.from(cluster.deps.values()).reduce((sum, d) => sum + d, 0);
+    const maxShards = Math.min(shard.total, cluster.groups.length);
+    // Dependency-free clusters can spread freely. For clusters that carry a
+    // setup, only duplicate that setup onto another shard while each shard
+    // still carries at least as much real test work as the setup it pays for:
+    // splitting `work` across `k` shards is worthwhile only while `work / k`
+    // stays above `setupCost`. This keeps a single heavy "setup" project (and
+    // .serial suites, which are atomic groups) on as few shards as possible,
+    // while still parallelizing genuinely heavy test suites.
+    cluster.spread = cluster.setupCost === 0
+      ? maxShards
+      : Math.min(maxShards, Math.max(1, Math.floor(cluster.work / cluster.setupCost)));
   }
 
-  for (const testEntry of entries) {
-    let minShardIdx = 0;
-    let minShardDuration = shards[0].totalDuration + addToShardDuration(shards[0], testEntry);
-    for (let shardIdx = 1; shardIdx < shards.length; ++shardIdx) {
-      const d = shards[shardIdx].totalDuration + addToShardDuration(shards[shardIdx], testEntry);
-      if (d < minShardDuration) {
-        minShardIdx = shardIdx;
-        minShardDuration = d;
+  // Place dependency-bearing clusters first, heaviest first, so they can claim
+  // the shards they need; then fill the remaining capacity with dependency-free
+  // tests. Within a tier, heavier clusters (counting one setup copy per shard
+  // they will occupy) go first.
+  const plan = Array.from(clusters.values()).sort((a, b) => {
+    if ((a.setupCost > 0) !== (b.setupCost > 0))
+      return a.setupCost > 0 ? -1 : 1;
+    return (b.work + b.spread * b.setupCost) - (a.work + a.spread * a.setupCost);
+  });
+
+  for (const cluster of plan) {
+    // Reserve the cheapest `spread` shards to host this cluster, preferring
+    // shards that already run the shared dependencies (so we do not pay for
+    // them twice) and otherwise the least loaded ones.
+    const homeShards = shards
+      .map((target, index) => ({ target, index, cost: target.totalDuration + dependencyCost(target, cluster.deps) }))
+      .sort((a, b) => a.cost - b.cost || a.index - b.index)
+      .slice(0, cluster.spread)
+      .map(entry => entry.target);
+
+    // Distribute the cluster's groups across its home shards, largest first,
+    // always picking the shard that ends up least loaded (LPT).
+    const ordered = [...cluster.groups].sort((a, b) => b.duration - a.duration);
+    for (const group of ordered) {
+      let best = homeShards[0];
+      let bestDuration = best.totalDuration + group.duration + dependencyCost(best, group.deps);
+      for (let i = 1; i < homeShards.length; ++i) {
+        const candidate = homeShards[i];
+        const duration = candidate.totalDuration + group.duration + dependencyCost(candidate, group.deps);
+        if (duration < bestDuration) {
+          best = candidate;
+          bestDuration = duration;
+        }
       }
+      placeGroup(best, group);
     }
-    addShardEntry(shards[minShardIdx], testEntry);
   }
 
   const selectedShard = shards[shard.current - 1];
-  const testIds = selectedShard.groups.map(shard => shard.ids).flat();
+  const testIds = selectedShard.groups.map(group => group.ids).flat();
   await fs.promises.writeFile(shard.outputFile, testIds.join('\n') + '\n');
 }
 
