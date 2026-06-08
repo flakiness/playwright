@@ -213,7 +213,7 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
     ],
   });
 
-  expect(shards.map(shard => shard.totalWeight)).toEqual([151, 151]);
+  expect(shards.map(shard => shard.totalWeight)).toEqual([102, 100]);
 });
 
 test('should shard dependency projects selected with project filter', async ({}, testInfo) => {
@@ -275,8 +275,278 @@ test('should generate perfect shards with teardown projects', async ({}, testInf
     ],
   });
 
-  // The best sharding here would be 110 / 110.
-  expect(shards.map(shard => shard.totalWeight)).toEqual([160, 160]);
+  expect(shards.map(shard => shard.totalWeight)).toEqual([110, 110]);
+});
+
+test('should pay setup cost once when independent tests can fill other shards', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=100 setup', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=5 app alpha', async () => {});
+      test('w=5 app beta', async () => {});
+      test('w=5 app gamma', async () => {});
+      test('w=5 app delta', async () => {});
+    `,
+    'unit.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 120; ++i)
+        test('w=1 unit-' + i, async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+      { name: 'unit', testMatch: 'unit.spec.ts' },
+    ],
+  });
+
+  // All app tests stay with their setup on one shard (100 + 4×5 = 120),
+  // and the unit tests fill the other shard to the same 120.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([120, 120]);
+  expect(shards.map(shard => reportTestCount(shard.report))).toEqual([5, 120]);
+});
+
+test('should duplicate setup across shards when dependent tests dominate', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 setup', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 20; ++i)
+        test('w=10 app-' + i, async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+    ],
+  });
+
+  // Keeping all 200s of app tests on one shard would yield 210 / 0; re-running
+  // the cheap 10s setup on both shards is well worth it: 10 + 10×10 each.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([110, 110]);
+  expect(shards.map(shard => reportTestCount(shard.report))).toEqual([11, 11]);
+});
+
+test('should not split one atomic dependent group across extra shards', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 setup', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test.describe.serial('atomic app group', () => {
+        for (let i = 0; i < 10; ++i)
+          test('w=10 app-' + i, async () => {});
+      });
+    `,
+    'unit.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 200; ++i)
+        test('w=1 unit-' + i, async () => {});
+    `,
+  }, 3, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+      { name: 'unit', testMatch: 'unit.spec.ts' },
+    ],
+  });
+
+  // The serial suite is one shard group, so it can occupy only one shard:
+  // setup + 10 app tests = 110, with unit tests filling the other two shards.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([100, 100, 110]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([11, 100, 100]);
+});
+
+test('should share one setup across browser projects on every shard', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=60 setup', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=30 app alpha', async () => {});
+      test('w=30 app beta', async () => {});
+    `,
+  }, 3, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'chromium', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+      { name: 'firefox', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+      { name: 'webkit', testMatch: 'app.spec.ts', dependencies: ['setup'] },
+    ],
+  });
+
+  // All browser tests need the setup, so every shard pays for it once and
+  // takes an equal slice of the browser tests: 60 + 2×30 each.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([120, 120, 120]);
+  expect(shards.map(shard => reportTestCount(shard.report))).toEqual([3, 3, 3]);
+});
+
+test('should prefer shards that already run shared dependency projects', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=50 setup', async () => {});
+    `,
+    'db.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=50 db', async () => {});
+    `,
+    'web.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 web', async () => {});
+    `,
+    'api.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 api', async () => {});
+    `,
+    'unit.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 100; ++i)
+        test('w=1 unit-' + i, async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup', testMatch: 'setup.spec.ts' },
+      { name: 'db', testMatch: 'db.spec.ts' },
+      { name: 'web', testMatch: 'web.spec.ts', dependencies: ['setup', 'db'] },
+      { name: 'api', testMatch: 'api.spec.ts', dependencies: ['setup'] },
+      { name: 'unit', testMatch: 'unit.spec.ts' },
+    ],
+  });
+
+  // The api test joins the shard where the web test already pays for `setup`
+  // (50 + 50 + 10 + 10 = 120) instead of starting a second copy of `setup`
+  // elsewhere, which would have ended at 135 / 135.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([120, 100]);
+  expect(shards.map(shard => reportTestCount(shard.report))).toEqual([4, 100]);
+});
+
+test('should account only for missing setup when deciding family span', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup-a.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=7 setup A', async () => {});
+    `,
+    'setup-b.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=4 setup B', async () => {});
+    `,
+    'setup-c.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=1 setup C', async () => {});
+    `,
+    'ab.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=40 ab high', async () => {});
+      test('w=32 ab low', async () => {});
+    `,
+    'ac.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=22 ac high', async () => {});
+      test('w=12 ac low', async () => {});
+    `,
+    'a.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=32 a only', async () => {});
+    `,
+  }, 2, {}, {
+    projects: [
+      { name: 'setup-a', testMatch: 'setup-a.spec.ts' },
+      { name: 'setup-b', testMatch: 'setup-b.spec.ts' },
+      { name: 'setup-c', testMatch: 'setup-c.spec.ts' },
+      { name: 'ab', testMatch: 'ab.spec.ts', dependencies: ['setup-a', 'setup-b'] },
+      { name: 'ac', testMatch: 'ac.spec.ts', dependencies: ['setup-a', 'setup-c'] },
+      { name: 'a', testMatch: 'a.spec.ts', dependencies: ['setup-a'] },
+    ],
+  });
+
+  // The `ac` family should stay on the shard that already runs setup A.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([83, 78]);
+  expect(shards.map(shard => reportTestTitles(shard.report).sort())).toEqual([
+    [
+      'w=32 a only',
+      'w=4 setup B',
+      'w=40 ab high',
+      'w=7 setup A',
+    ],
+    [
+      'w=1 setup C',
+      'w=12 ac low',
+      'w=22 ac high',
+      'w=32 ab low',
+      'w=4 setup B',
+      'w=7 setup A',
+    ],
+  ]);
+});
+
+test('should use the widest family span when span costs are tied', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'setup-a.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=13 setup A', async () => {});
+    `,
+    'app.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=37 app high', async () => {});
+      test('w=18 app mid', async () => {});
+      test('w=16 app low', async () => {});
+    `,
+    'unit.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=34 unit high', async () => {});
+      test('w=29 unit mid', async () => {});
+      test('w=18 unit low', async () => {});
+      test('w=15 unit small', async () => {});
+    `,
+  }, 3, {}, {
+    projects: [
+      { name: 'setup-a', testMatch: 'setup-a.spec.ts' },
+      { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup-a'] },
+      { name: 'unit', testMatch: 'unit.spec.ts' },
+    ],
+  });
+
+  // Once app work has used two shards, the independent unit family has equal
+  // estimated costs for spanning 2 or 3 shards. Prefer the wider span so the
+  // zero-setup filler can balance all shards.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([63, 65, 65]);
+  expect(shards.map(shard => reportTestTitles(shard.report).some(title => title.includes('unit')))).toEqual([true, true, true]);
 });
 
 function reportTestCount(report: FlakinessReport.Report): number {
