@@ -44,7 +44,6 @@ type Family = {
 };
 
 type Shard = {
-  idx: number,
   groups: ShardGroup[],
   total: number,
   score: number, // used later to store shard score when picking distribution.
@@ -115,8 +114,7 @@ function balanceShards(entries: ShardGroup[], N: number): ShardGroup[][] {
   }
   const families = Array.from(familiesMap.values()).sort((f1, f2) => f1.setup - f2.setup);
 
-  const shards: Shard[] = Array(N).fill(0).map((_, idx) => ({
-    idx,
+  const shards: Shard[] = Array(N).fill(0).map(() => ({
     groups: [],
     total: 0,
     score: 0,
@@ -142,8 +140,6 @@ function balanceShards(entries: ShardGroup[], N: number): ShardGroup[][] {
         bestShard.deps.add(name);
     }
   }
-  // Restore initial shard ordering.
-  shards.sort((s1, s2) => s1.idx - s2.idx);
   return shards.map(shard => shard.groups);
 }
 
@@ -189,9 +185,7 @@ function selectShards(shards: Shard[], families: Family[], heaviest: Family, N: 
     const avgMakespan = (totalWithoutHeaviest + missingSetup + (K - 1) * heaviest.setup + heaviest.work) / N;
     shard.score = Math.max(localMakespan, avgMakespan);
   }
-  // Select shards to distribute work at.
-  shards.sort((s1, s2) => s1.score - s2.score);
-  return shards.slice(0, K);
+  return shards.toSorted((s1, s2) => s1.score - s2.score).slice(0, K);
 }
 
 function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
