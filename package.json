@@ -1,6 +1,7 @@
 {
   "name": "@flakiness/playwright",
   "version": "1.14.0",
+  "packageManager": "pnpm@11.5.0",
   "private": false,
   "repository": {
     "type": "git",
@@ -44,7 +45,7 @@
     "@flakiness/sdk": "^3.3.1",
     "@playwright/test": "^1.60.0",
     "@types/node": "^25.9.1",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.27.7",
     "kubik": "^0.24.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
