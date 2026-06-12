@@ -18,14 +18,14 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -38,7 +38,7 @@ jobs:
       - run: pnpm test
       - name: Upload Flakiness report artifact (for Pull Requests from forks)
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flakiness-report-${{ github.job }}-${{ strategy.job-index }}
           path: flakiness-report/
