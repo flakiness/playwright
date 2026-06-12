@@ -47,6 +47,6 @@
     "esbuild": "^0.27.7",
     "kubik": "^0.24.0",
     "tsx": "^4.22.4",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
