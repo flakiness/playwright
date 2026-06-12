@@ -4,5 +4,5 @@
 
 # Include sources from lib, but not map files.
 !lib/**/*.js
-# Include generated types and entrypoint.
-!types/src/*
+# Include generated types, but not map files (they reference src/, which is not published).
+!types/src/*.d.ts
