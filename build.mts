@@ -19,14 +19,22 @@ await fs.promises.rm(typesDir, { recursive: true, force: true });
 const { errors } = await esbuild.build({
   color: true,
   entryPoints: [
-    path.join(srcDir, '*.ts'),
+    path.join(srcDir, 'playwright-test.ts'),
+    path.join(srcDir, 'flakiness-playwright-shard.ts'),
   ],
   outdir: outDir,
   format: 'esm',
   platform: 'node',
   target: ['node22'],
   sourcemap: true,
-  bundle: false,
+  // Bundle all prod dependencies (zod in particular) so the published
+  // package has zero runtime dependencies besides Playwright itself.
+  bundle: true,
+  external: ['@playwright/test'],
+  banner: {
+    // Bundled CJS dependencies require() node builtins at runtime.
+    js: `import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);`,
+  },
   minify: false,
 });
 
