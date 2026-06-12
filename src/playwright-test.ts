@@ -89,7 +89,8 @@ export default class FlakinessReporter implements Reporter {
   private _sampleSystem() {
     this._cpuUtilization.sample();
     this._ramUtilization.sample();
-    this._telemetryTimer = setTimeout(this._sampleSystem, 1000);
+    // unref() so a pending sample never keeps the host process alive.
+    this._telemetryTimer = setTimeout(this._sampleSystem, 1000).unref();
   }
 
   printsToStdio(): boolean {
