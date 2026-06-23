@@ -40,11 +40,11 @@
     "node": "^20.17.0 || >=22.9.0"
   },
   "devDependencies": {
-    "@flakiness/flakiness-report": "^0.34.0",
+    "@flakiness/flakiness-report": "^0.35.0",
     "@flakiness/playwright": "^1.14.0",
     "@flakiness/sdk": "^3.3.1",
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.1",
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^25.9.4",
     "esbuild": "^0.27.7",
     "kubik": "^0.24.0",
     "tsx": "^4.22.4",
