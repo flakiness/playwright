@@ -9,14 +9,14 @@ importers:
   .:
     devDependencies:
       '@flakiness/flakiness-report':
-        specifier: ^0.34.0
-        version: 0.34.0(zod@4.4.3)
+        specifier: ^0.35.0
+        version: 0.35.0(zod@4.4.3)
       '@flakiness/playwright':
         specifier: ^1.14.0
         version: 1.14.0
       '@flakiness/sdk':
-        specifier: ^3.3.1
-        version: 3.3.1(@flakiness/flakiness-report@0.34.0(zod@4.4.3))
+        specifier: ^3.4.0
+        version: 3.4.0(@flakiness/flakiness-report@0.35.0(zod@4.4.3))
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
@@ -198,8 +198,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@flakiness/flakiness-report@0.34.0':
-    resolution: {integrity: sha512-37SRIky7mnMhV9Go/VO3pwo5r0ZQ5h/rTYmQBWdIyty2ZGylEUdbxZ+Yz2wCJwlmVeK9V8VWm0pInAjxUJ/x5g==}
+  '@flakiness/flakiness-report@0.35.0':
+    resolution: {integrity: sha512-dJS4fS9c69W8Zs8Vvs4pg752WYYGBZkOjyUoDye6QNbmmaq7aYDKIPvlXBr/AIhSyGkHMAWifr7HhQQFQ+CeVA==}
     peerDependencies:
       zod: ^4.1.12
 
@@ -208,8 +208,8 @@ packages:
     engines: {node: ^20.17.0 || >=22.9.0}
     hasBin: true
 
-  '@flakiness/sdk@3.3.1':
-    resolution: {integrity: sha512-LrV+g246Oo9MSpVKU9bY/UHOYglwcqr0e4I6Vz0RGhHtOyrR2xZRCVzsM4crItDvNbIW4/9AJSRwQ5nptCykvw==}
+  '@flakiness/sdk@3.4.0':
+    resolution: {integrity: sha512-w5Wigvnur+Y1bQEU3voCIT1boACsVU5sn1B+tsICzhAbiF2bGTE+UUOFr8SRiJL0h7nUO1EjwxVGpI8EtLv1Aw==}
     engines: {node: ^20.17.0 || >=22.9.0}
     peerDependencies:
       '@flakiness/flakiness-report': '>=0.26.0 <1.0.0'
@@ -575,9 +575,9 @@ packages:
     engines: {node: '>= 8'}
     hasBin: true
 
-  which@6.0.1:
-    resolution: {integrity: sha512-oGLe46MIrCRqX7ytPUf66EAYvdeMIZYn3WaocqqKZAxrBpkqHfL/qvTyJ/bTk5+AqHCjXmrv3CEWgy368zhRUg==}
-    engines: {node: ^20.17.0 || >=22.9.0}
+  which@7.0.0:
+    resolution: {integrity: sha512-RancgH2dmbLdHl6LRhEqvklWMgl/Hdnun0Y90KhBOLkMefg8Qa7/Zel8Sm+8HEcP6DEjzsWzpkuBQEZok58isA==}
+    engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
     hasBin: true
 
   widest-line@5.0.0:
@@ -699,19 +699,19 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@flakiness/flakiness-report@0.34.0(zod@4.4.3)':
+  '@flakiness/flakiness-report@0.35.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
   '@flakiness/playwright@1.14.0': {}
 
-  '@flakiness/sdk@3.3.1(@flakiness/flakiness-report@0.34.0(zod@4.4.3))':
+  '@flakiness/sdk@3.4.0(@flakiness/flakiness-report@0.35.0(zod@4.4.3))':
     dependencies:
-      '@flakiness/flakiness-report': 0.34.0(zod@4.4.3)
+      '@flakiness/flakiness-report': 0.35.0(zod@4.4.3)
       debug: 4.4.3
       open: 10.2.0
       stable-hash: 0.0.6
-      which: 6.0.1
+      which: 7.0.0
       zod: 4.4.3
     transitivePeerDependencies:
       - supports-color
@@ -1060,7 +1060,7 @@ snapshots:
     dependencies:
       isexe: 2.0.0
 
-  which@6.0.1:
+  which@7.0.0:
     dependencies:
       isexe: 4.0.0
 
