@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { SHARD_HINT_ENV } from './sharding.js';
 
 type Shard = {
   current: number;
@@ -57,7 +58,12 @@ async function main() {
     if (!hasArg(parsed.passthrough, '--pass-with-no-tests'))
       runArgs.unshift('--pass-with-no-tests');
 
-    return runPlaywright(playwrightCLI, runArgs, process.env, true);
+    return runPlaywright(playwrightCLI, runArgs, {
+      ...process.env,
+      // Hint the reporter that this run is shard N/M (the run uses --test-list,
+      // not --shard, so Playwright's native config.shard is null).
+      [SHARD_HINT_ENV]: `${parsed.shard.current}/${parsed.shard.total}`,
+    }, true);
   } finally {
     await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
