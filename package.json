@@ -19,7 +19,7 @@
   },
   "type": "module",
   "description": "A custom Playwright test reporter that generates Flakiness Reports from your Playwright test runs",
-  "types": "./types/index.d.ts",
+  "types": "./types/src/playwright-test.d.ts",
   "scripts": {
     "build": "kubik build.mts",
     "watch": "kubik build.mts -w",
