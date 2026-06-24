@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
 import { buildReport, computeFKTestId } from './reportBuilder.js';
-import { generatePerfectShard, parseShardEnv } from './sharding.js';
+import { generateBalancedShard, parseShardSlot, SHARD_HINT_ENV } from './sharding.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -161,7 +161,7 @@ export default class FlakinessReporter implements Reporter {
       flakinessProject: this._options.flakinessProject,
       results: this._results,
       stdio: this._stdioEntries,
-      title: this._options.title,
+      title: this._options.title ?? process.env.FLAKINESS_TITLE ?? defaultShardTitle(this._config),
       unattributedErrors: this._unattributedErrors,
     });
 
@@ -221,7 +221,8 @@ export default class FlakinessReporter implements Reporter {
             testCaseDurations.set(testCase, attempt.duration);
         }
       });
-      await generatePerfectShard(shardRequest, this._config, this._rootSuite, testCaseDurations);
+      const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, testCaseDurations);
+      await fs.promises.writeFile(shardRequest.outputFile, shardFile);
       // Workaround https://github.com/nodejs/node/issues/56645
       if (process.platform === 'win32')
         await new Promise(x => setTimeout(x, 100));
@@ -272,4 +273,23 @@ To open last Flakiness report, run:
 
 function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
+}
+
+type ShardRequest = { current: number, total: number, outputFile: string };
+
+function parseShardEnv(): ShardRequest | undefined {
+  const slot = parseShardSlot(process.env.FLAKINESS_SHARD);
+  const fileValue = process.env.FLAKINESS_SHARD_FILE;
+  if (!slot || !fileValue)
+    return undefined;
+  return { current: slot.current, total: slot.total, outputFile: fileValue };
+}
+
+// Default report title when this run is part of a shard. Prefers Playwright's
+// native `config.shard` (plain `--shard=N/M` runs) and falls back to the
+// `FLAKINESS_SHARD_HINT` env var set by `flakiness-playwright-shard`. Returns
+// undefined when the run is not sharded.
+function defaultShardTitle(config: FullConfig): string | undefined {
+  const slot = config.shard ?? parseShardSlot(process.env[SHARD_HINT_ENV]);
+  return slot ? `Shard ${slot.current}/${slot.total}` : undefined;
 }
