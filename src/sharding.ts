@@ -2,10 +2,9 @@ import type {
   FullConfig,
   Suite, TestCase
 } from '@playwright/test/reporter';
-import fs from 'node:fs';
 import path from 'node:path';
 
-type ShardRequest = { current: number, total: number, outputFile: string };
+type ShardSlot = { current: number, total: number };
 
 type ShardGroup = {
   ids: string[],
@@ -13,27 +12,30 @@ type ShardGroup = {
   deps: Map<string, number>,
 }
 
-export function parseShardEnv(): ShardRequest | undefined {
-  const slotValue = process.env.FLAKINESS_SHARD;
-  const fileValue = process.env.FLAKINESS_SHARD_FILE;
-  if (!slotValue || !fileValue)
+// Set by `flakiness-playwright-shard` on the real test run so the reporter knows
+// it is executing shard N/M. The wrapper selects tests via `--test-list`, so
+// Playwright's native `config.shard` is null and this hint is the only signal.
+export const SHARD_HINT_ENV = 'FLAKINESS_SHARD_HINT';
+
+export function parseShardSlot(value: string | undefined): ShardSlot | undefined {
+  if (!value)
     return undefined;
-  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(slotValue);
+  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(value);
   if (!match)
     return undefined;
   const current = Number(match[1]);
   const total = Number(match[2]);
   if (!total || current < 1 || current > total)
     return undefined;
-  return { current, total, outputFile: fileValue };
+  return { current, total };
 }
 
-export async function generatePerfectShard(request: ShardRequest, config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
+export function generateBalancedShard(request: ShardSlot, config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>): string {
   const shardGropus = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
   const shards = balanceShards(shardGropus, request.total);
   const selectedShard = shards[request.current - 1];
   const testIds = selectedShard.map(shard => shard.ids).flat();
-  await fs.promises.writeFile(request.outputFile, testIds.join('\n') + '\n');
+  return testIds.join('\n') + '\n';
 }
 
 type Family = {

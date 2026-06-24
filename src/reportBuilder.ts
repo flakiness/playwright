@@ -92,7 +92,7 @@ export async function buildReport(options: {
 
   const report = ReportUtils.normalizeReport({
     flakinessProject: options.flakinessProject,
-    title: options.title ?? process.env.FLAKINESS_TITLE,
+    title: options.title,
     category: 'playwright',
     commitId: options.commitId,
     relatedCommitIds: [],
