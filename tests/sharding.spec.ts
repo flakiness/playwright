@@ -169,6 +169,29 @@ test('should keep nested tests from configured serial suites in one shard', asyn
   ]);
 });
 
+test('should keep distinct serial suites with the same title on separate shards', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test.describe.serial('checkout', () => {
+        test('w=10 alpha-1', async () => {});
+        test('w=10 alpha-2', async () => {});
+      });
+
+      test.describe.serial('checkout', () => {
+        test('w=10 beta-1', async () => {});
+        test('w=10 beta-2', async () => {});
+      });
+    `,
+  }, 2, {}, { fullyParallel: true });
+
+  // Two independent serial suites that happen to share a title ('checkout') are
+  // separate indivisible units, so they should balance one-per-shard instead of
+  // collapsing onto a single shard.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([20, 20]);
+});
+
 test('should reject reporter override for balanced sharding', async ({}, testInfo) => {
   await expect(runPerfectShards(testInfo, {
     'example.spec.ts': `

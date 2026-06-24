@@ -246,7 +246,7 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
       continue;
 
     const testEntryId = createTestEntryId(testCase, config.rootDir);
-    const shardGroupId = computeShardSuite(testCase)?.titlePath().join(' › ') ?? testEntryId;
+    const shardGroupId = createSuiteId(computeShardSuite(testCase)) ?? testEntryId;
     let shardGroup = shardGroups.get(shardGroupId);
     if (!shardGroup) {
       shardGroup = {
@@ -286,6 +286,20 @@ function computeShardSuite(testCase: TestCase): Suite|undefined {
   if (outermostSequential)
     return outermostSequential;
   return undefined;
+}
+
+function createSuiteId(suite: Suite|undefined) {
+  const tokens: string[][] = [];
+  while (suite) {
+    if (suite.type === 'root')
+      break;
+    const suiteId = [suite.title];
+    if (suite.location)
+      suiteId.push(suite.location.file + ':' + suite.location.line + ':' + suite.location.column);
+    tokens.push(suiteId);
+    suite = suite.parent;
+  }
+  return tokens.length ? JSON.stringify(tokens.reverse()) : undefined;
 }
 
 function createTestEntryId(testCase: TestCase, rootDir: string): string {
