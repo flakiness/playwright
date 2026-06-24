@@ -99,6 +99,26 @@ Any additional arguments are passed through to `playwright test`:
 npx flakiness-playwright-shard --shard=1/2 --project=chromium tests/e2e
 ```
 
+### Sharding granularity
+
+`flakiness-playwright-shard` splits work into the same indivisible units that Playwright assigns to its workers, then balances those units across shards by historical duration. The unit follows your Playwright parallelism configuration:
+
+- **Default** — a whole spec **file** is one unit. Playwright runs a file's tests in order on a single worker, so a file is never split across shards.
+- **`fullyParallel: true`** — every **test** is its own unit, giving the finest-grained, most even balancing.
+- **`test.describe.serial()`** (or `test.describe.configure({ mode: 'serial' })`) — the suite stays together as one unit, in order, even under `fullyParallel`.
+- **`test.describe.parallel()`** — splits that suite's tests into per-test units even when the project is not fully parallel.
+
+For the most even shards, enable Playwright's [`fullyParallel`](https://playwright.dev/docs/test-parallel) so each test can be balanced independently:
+
+```typescript
+export default defineConfig({
+  fullyParallel: true,
+  // ...
+});
+```
+
+Without it, balancing is per-file — a single large spec file is one unit and lands entirely on one shard. You can also opt in selectively by wrapping the tests you want spread across shards in `test.describe.parallel()`.
+
 ## Uploading Reports
 
 Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authentication can be done in two ways:

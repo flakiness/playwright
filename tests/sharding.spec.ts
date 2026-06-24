@@ -14,7 +14,7 @@ test('should generate perfect shards', async ({}, testInfo) => {
       test('w=5 delta', async () => {});
       test('w=5 epsilon', async () => {});
     `,
-  }, 2);
+  }, 2, {}, { fullyParallel: true });
 
   expect(shards[0].totalWeight).toBe(30);
   expect(shards[1].totalWeight).toBe(30);
@@ -32,6 +32,7 @@ test('should generate perfect shards across independent projects', async ({}, te
       test('w=5 epsilon', async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'alpha' },
       { name: 'beta' },
@@ -52,7 +53,7 @@ test('should shard tests without historical durations', async ({}, testInfo) => 
       test('gamma', async () => {});
       test('delta', async () => {});
     `,
-  }, 2);
+  }, 2, {}, { fullyParallel: true });
 
   expect(shards.map(shard => shard.totalWeight)).toEqual([0, 0]);
   expect(shards.map(shard => reportTestCount(shard.report)).sort()).toEqual([2, 2]);
@@ -88,7 +89,9 @@ test('should keep tests from serial suites in one shard', async ({}, testInfo) =
         test('w=4 eta', async () => {});
       });
     `,
-  }, 2);
+  }, 2, {}, {
+    fullyParallel: true,
+  });
 
   // All serial tests should end up in the same shard.
   expect(shards.map(shard => shard.totalWeight)).toEqual([28, 0]);
@@ -119,7 +122,7 @@ test('should keep serial suite tests together while sharding standalone tests', 
       test('w=8 standalone beta', async () => {});
       test('w=8 standalone gamma', async () => {});
     `,
-  }, 2);
+  }, 2, {}, { fullyParallel: true });
 
   // Playwright's --test-list selects tests, but does not preserve list order.
   expect(shards.map(shard => reportTestTitles(shard.report).sort())).toEqual([
@@ -152,7 +155,7 @@ test('should keep nested tests from configured serial suites in one shard', asyn
       test('w=10 standalone alpha', async () => {});
       test('w=10 standalone beta', async () => {});
     `,
-  }, 2);
+  }, 2, {}, { fullyParallel: true });
 
   expect(shards.map(shard => reportTestTitles(shard.report))).toEqual([
     [
@@ -164,6 +167,29 @@ test('should keep nested tests from configured serial suites in one shard', asyn
       'w=10 standalone beta',
     ],
   ]);
+});
+
+test('should keep distinct serial suites with the same title on separate shards', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test.describe.serial('checkout', () => {
+        test('w=10 alpha-1', async () => {});
+        test('w=10 alpha-2', async () => {});
+      });
+
+      test.describe.serial('checkout', () => {
+        test('w=10 beta-1', async () => {});
+        test('w=10 beta-2', async () => {});
+      });
+    `,
+  }, 2, {}, { fullyParallel: true });
+
+  // Two independent serial suites that happen to share a title ('checkout') are
+  // separate indivisible units, so they should balance one-per-shard instead of
+  // collapsing onto a single shard.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([20, 20]);
 });
 
 test('should reject reporter override for balanced sharding', async ({}, testInfo) => {
@@ -206,6 +232,7 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
         test('w=1 unit-test-' + i, async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
@@ -230,6 +257,7 @@ test('should shard dependency projects selected with project filter', async ({},
       test('w=100 app', async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
@@ -267,6 +295,7 @@ test('should generate perfect shards with teardown projects', async ({}, testInf
         test('w=1 unit-' + i, async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts', teardown: 'teardown' },
       { name: 'teardown', testMatch: 'teardown.spec.ts' },
@@ -300,6 +329,7 @@ test('should pay setup cost once when independent tests can fill other shards', 
         test('w=1 unit-' + i, async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
@@ -327,6 +357,7 @@ test('should duplicate setup across shards when dependent tests dominate', async
         test('w=10 app-' + i, async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
@@ -361,6 +392,7 @@ test('should not split one atomic dependent group across extra shards', async ({
         test('w=1 unit-' + i, async () => {});
     `,
   }, 3, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup'] },
@@ -388,6 +420,7 @@ test('should share one setup across browser projects on every shard', async ({},
       test('w=30 app beta', async () => {});
     `,
   }, 3, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'chromium', testMatch: 'app.spec.ts', dependencies: ['setup'] },
@@ -431,6 +464,7 @@ test('should prefer shards that already run shared dependency projects', async (
         test('w=1 unit-' + i, async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup', testMatch: 'setup.spec.ts' },
       { name: 'db', testMatch: 'db.spec.ts' },
@@ -482,6 +516,7 @@ test('should account only for missing setup when deciding family span', async ({
       test('w=32 a only', async () => {});
     `,
   }, 2, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup-a', testMatch: 'setup-a.spec.ts' },
       { name: 'setup-b', testMatch: 'setup-b.spec.ts' },
@@ -535,6 +570,7 @@ test('should use the widest family span when span costs are tied', async ({}, te
       test('w=15 unit small', async () => {});
     `,
   }, 3, {}, {
+    fullyParallel: true,
     projects: [
       { name: 'setup-a', testMatch: 'setup-a.spec.ts' },
       { name: 'app', testMatch: 'app.spec.ts', dependencies: ['setup-a'] },
@@ -547,6 +583,78 @@ test('should use the widest family span when span costs are tied', async ({}, te
   // zero-setup filler can balance all shards.
   expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([63, 65, 65]);
   expect(shards.map(shard => reportTestTitles(shard.report).some(title => title.includes('unit')))).toEqual([true, true, true]);
+});
+
+test('should not split a non-fully-parallel spec file across shards', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 alpha', async () => {});
+      test('w=10 beta', async () => {});
+      test('w=10 gamma', async () => {});
+      test('w=10 delta', async () => {});
+    `,
+  }, 2);
+
+  // Without fullyParallel, Playwright runs a file's tests in order on one worker,
+  // so the whole file is one indivisible shard group and lands entirely on one shard.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([0, 40]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 4]);
+});
+
+test('should distribute whole spec files across shards by default', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'alpha.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 alpha-1', async () => {});
+      test('w=10 alpha-2', async () => {});
+      test('w=10 alpha-3', async () => {});
+    `,
+    'beta.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 beta-1', async () => {});
+      test('w=10 beta-2', async () => {});
+      test('w=10 beta-3', async () => {});
+    `,
+  }, 2);
+
+  // Each file is one indivisible group, so the two files split cleanly across shards.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([30, 30]);
+  // A single file is never split: no shard contains tests from both files.
+  for (const shard of shards) {
+    const titles = reportTestTitles(shard.report);
+    const hasAlpha = titles.some(title => title.includes('alpha'));
+    const hasBeta = titles.some(title => title.includes('beta'));
+    expect(hasAlpha && hasBeta).toBe(false);
+    expect(titles.length).toBe(3);
+  }
+});
+
+test('should shard a parallel describe per-test even without fullyParallel', async ({}, testInfo) => {
+  const shards = await runPerfectShards(testInfo, {
+    'plain.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 plain', async () => {});
+    `,
+    'par.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test.describe.parallel('parallel group', () => {
+        test('w=10 par-1', async () => {});
+        test('w=10 par-2', async () => {});
+        test('w=10 par-3', async () => {});
+      });
+    `,
+  }, 2);
+
+  // A `test.describe.parallel` block is shardable per-test even though the project
+  // is not fullyParallel, so its three tests balance against the plain file to 20 / 20.
+  // (Were the block sequential, it would be one atomic group and yield 30 / 10.)
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([20, 20]);
 });
 
 function reportTestCount(report: FlakinessReport.Report): number {

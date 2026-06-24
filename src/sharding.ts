@@ -238,8 +238,7 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
 
   // Group all tests into shard groups. Each shard group is identified either by
   // a suite (an outermost serial suite), or a testCaseId (if tests are executed with repeat-each).
-  type ShardGroupId = Suite|string;
-  const shardGroups = new Map<ShardGroupId, ShardGroup>();
+  const shardGroups = new Map<string, ShardGroup>();
 
   for (const testCase of leafTests) {
     const proj = testCase.parent.project();
@@ -247,7 +246,7 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
       continue;
 
     const testEntryId = createTestEntryId(testCase, config.rootDir);
-    const shardGroupId = outermostSerialSuite(testCase) ?? testEntryId;
+    const shardGroupId = createSuiteId(computeShardSuite(testCase)) ?? testEntryId;
     let shardGroup = shardGroups.get(shardGroupId);
     if (!shardGroup) {
       shardGroup = {
@@ -266,18 +265,42 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
 }
 
 // Playwright does not expose suite mode in reporter types, but native sharding
-// uses this runtime field to keep serial suites together.
+// uses this runtime field to detect proper sharding mode.
 type SuiteWithParallelMode = Suite & { _parallelMode?: string };
 
-function outermostSerialSuite(testCase: TestCase): Suite | undefined {
-  let result: Suite | undefined;
+function computeShardSuite(testCase: TestCase): Suite|undefined {
+  let outermostSequential: Suite | undefined;
+  let insideParallel = false;
+  let fileSuite: Suite | undefined;
   for (let suite: Suite | undefined = testCase.parent; suite; suite = suite.parent) {
-    if ((suite as SuiteWithParallelMode)._parallelMode === 'serial')
-      result = suite;
+    if (suite.type === 'file')
+      fileSuite = suite;
+    const parallelMode = (suite as SuiteWithParallelMode)._parallelMode;
+    if (parallelMode === 'serial' || parallelMode === 'default')
+      outermostSequential = suite; 
+    else if (parallelMode === 'parallel')
+      insideParallel = true;
   }
-  return result;
+  if (!insideParallel)
+    return fileSuite;
+  if (outermostSequential)
+    return outermostSequential;
+  return undefined;
 }
 
+function createSuiteId(suite: Suite|undefined) {
+  const tokens: string[][] = [];
+  while (suite) {
+    if (suite.type === 'root')
+      break;
+    const suiteId = [suite.title];
+    if (suite.location)
+      suiteId.push(suite.location.file + ':' + suite.location.line + ':' + suite.location.column);
+    tokens.push(suiteId);
+    suite = suite.parent;
+  }
+  return tokens.length ? JSON.stringify(tokens.reverse()) : undefined;
+}
 
 function createTestEntryId(testCase: TestCase, rootDir: string): string {
   // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
