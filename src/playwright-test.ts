@@ -24,6 +24,7 @@ import path from 'node:path';
 import * as nodeUtil from 'node:util';
 import { buildReport, computeFKTestId } from './reportBuilder.js';
 import { generateBalancedShard, parseShardSlot, SHARD_HINT_ENV } from './sharding.js';
+import { TIMINGS_OUTPUT_ENV } from './utils.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -203,24 +204,49 @@ export default class FlakinessReporter implements Reporter {
       }
     }
 
-    const shardRequest = parseShardEnv();
-    if (this._options._mode === 'list' && shardRequest) {
-      // Fetch durations from the Flakiness.io
+    const timingsRequest = parseTimingsEnv();
+    if (this._options._mode === 'list' && timingsRequest) {
       const durationsReport = await fetchTestDurations(report, {
         flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
         flakinessEndpoint: this._options.endpoint,
       });
-      // Map durations to the test case instances.
+      await fs.promises.mkdir(path.dirname(timingsRequest.outputFile), { recursive: true });
+      await fs.promises.writeFile(timingsRequest.outputFile, JSON.stringify(durationsReport, undefined, 2));
+      // Workaround https://github.com/nodejs/node/issues/56645
+      if (process.platform === 'win32')
+        await new Promise(x => setTimeout(x, 100));
+      return;
+    }
+
+    const shardRequest = parseShardEnv();
+    if (this._options._mode === 'list' && shardRequest) {
+      // Map historical durations onto this run's test cases. Durations come from a
+      // user-supplied timings file (e.g. a previous run's report.json) when
+      // `--timings` was passed, otherwise from the Flakiness.io Durations API.
+      // Never throw: a missing API/file just means we shard with default weights.
       const testCaseDurations = new Map<TestCase, number>();
-      ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
-        for (const attempt of test.attempts) {
-          const envName = durationsReport.environments[attempt.environmentIdx ?? 0].name;
-          const fkTestId = computeFKTestId(envName, test, parentSuites);
-          const testCase = testMappings.get(fkTestId);
-          if (testCase && attempt.duration !== undefined)
-            testCaseDurations.set(testCase, attempt.duration);
-        }
-      });
+      try {
+        const durationsReport: FK.Report = shardRequest.timingsFile
+          ? JSON.parse(await fs.promises.readFile(shardRequest.timingsFile, 'utf-8'))
+          : await fetchTestDurations(report, {
+              flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
+              flakinessEndpoint: this._options.endpoint,
+            });
+        ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
+          for (const attempt of test.attempts) {
+            const env = durationsReport.environments[attempt.environmentIdx ?? 0];
+            if (!env)
+              continue;
+            const fkTestId = computeFKTestId(env.name, test, parentSuites);
+            const testCase = testMappings.get(fkTestId);
+            if (testCase && attempt.duration !== undefined)
+              testCaseDurations.set(testCase, attempt.duration);
+          }
+        });
+      } catch (e) {
+        const source = shardRequest.timingsFile ? `timings file "${shardRequest.timingsFile}"` : 'the Durations API';
+        warn(`Failed to resolve test durations from ${source} (${e instanceof Error ? e.message : e}); balancing shard with default weights.`);
+      }
       const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, testCaseDurations);
       await fs.promises.writeFile(shardRequest.outputFile, shardFile);
       // Workaround https://github.com/nodejs/node/issues/56645
@@ -275,14 +301,25 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
-type ShardRequest = { current: number, total: number, outputFile: string };
+type ShardRequest = { current: number, total: number, outputFile: string, timingsFile?: string };
+type TimingsRequest = { outputFile: string };
+
+function parseTimingsEnv(): TimingsRequest | undefined {
+  const outputFile = process.env[TIMINGS_OUTPUT_ENV];
+  return outputFile ? { outputFile } : undefined;
+}
 
 function parseShardEnv(): ShardRequest | undefined {
   const slot = parseShardSlot(process.env.FLAKINESS_SHARD);
   const fileValue = process.env.FLAKINESS_SHARD_FILE;
   if (!slot || !fileValue)
     return undefined;
-  return { current: slot.current, total: slot.total, outputFile: fileValue };
+  return {
+    current: slot.current,
+    total: slot.total,
+    outputFile: fileValue,
+    timingsFile: process.env.FLAKINESS_SHARD_TIMINGS_FILE || undefined,
+  };
 }
 
 // Default report title when this run is part of a shard. Prefers Playwright's

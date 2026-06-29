@@ -1,7 +1,8 @@
 import type { FlakinessReport } from '@flakiness/flakiness-report';
 import { ReportUtils } from '@flakiness/sdk';
 import { expect, test } from '@playwright/test';
-import { runPerfectShards } from './utils.js';
+import fs from 'node:fs';
+import { fetchTimings, generateFlakinessReport, runPerfectShards } from './utils.js';
 
 test('should generate perfect shards', async ({}, testInfo) => {
   const shards = await runPerfectShards(testInfo, {
@@ -657,6 +658,80 @@ test('should shard a parallel describe per-test even without fullyParallel', asy
   expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([20, 20]);
 });
 
+test('should balance shards using a --timings file instead of the Durations API', async ({}, testInfo) => {
+  const files = {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+      test('beta', async () => {});
+      test('gamma', async () => {});
+      test('delta', async () => {});
+    `,
+  };
+
+  // A previous run's report is a valid timings file. Build one (reusing the real
+  // test ids) and weight 'alpha' so heavily it must occupy a shard by itself — a
+  // split the Durations API path can never produce here, since these titles carry
+  // no weights and the fake server would report no durations at all.
+  const { report } = await generateFlakinessReport(testInfo, files, {}, { fullyParallel: true });
+  const timings = withDurations(report, { alpha: 100, beta: 1, gamma: 1, delta: 1 });
+  const timingsFile = testInfo.outputPath('timings.json');
+  fs.writeFileSync(timingsFile, JSON.stringify(timings));
+
+  const shards = await runPerfectShards(testInfo, files, 2, {}, { fullyParallel: true }, undefined, [`--timings=${timingsFile}`]);
+
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
+  const soloShard = shards.find(shard => reportTestCount(shard.report) === 1)!;
+  expect(reportTestTitles(soloShard.report)).toEqual(['alpha']);
+});
+
+test('should fetch timings into a local file', async ({}, testInfo) => {
+  const { timings, timingsFile } = await fetchTimings(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=100 alpha', async () => {});
+      test('w=1 beta', async () => {});
+    `,
+  }, {}, { fullyParallel: true });
+
+  expect(fs.existsSync(timingsFile)).toBe(true);
+  expect(durationsByTitle(timings)).toEqual({
+    'w=100 alpha': [100],
+    'w=1 beta': [1],
+  });
+});
+
+test('should reject a missing --timings file', async ({}, testInfo) => {
+  await expect(runPerfectShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 alpha', async () => {});
+    `,
+  }, 2, {}, {}, undefined, ['--timings=./does-not-exist.json'])).rejects.toThrow(/--timings file not found/);
+});
+
+// Replaces each test's attempts with a single attempt per environment whose
+// duration is looked up by test title. Produces a Flakiness report shaped exactly
+// like one a previous run would write, suitable as a `--timings` file.
+function withDurations(report: FlakinessReport.Report, durationByTitle: Record<string, number>): FlakinessReport.Report {
+  const result = JSON.parse(JSON.stringify(report)) as FlakinessReport.Report;
+  ReportUtils.visitTests(result, test => {
+    const duration = durationByTitle[test.title];
+    if (duration === undefined)
+      return;
+    test.attempts = result.environments.map((_env, environmentIdx) => ({
+      environmentIdx,
+      status: 'passed' as FlakinessReport.TestStatus,
+      startTimestamp: 0 as FlakinessReport.UnixTimestampMS,
+      duration: duration as FlakinessReport.DurationMS,
+    }));
+  });
+  return result;
+}
+
 function reportTestCount(report: FlakinessReport.Report): number {
   let count = 0;
   ReportUtils.visitTests(report, test => count += test.attempts.length);
@@ -670,4 +745,12 @@ function reportTestTitles(report: FlakinessReport.Report): string[] {
       titles.push(test.title);
   });
   return titles;
+}
+
+function durationsByTitle(report: FlakinessReport.Report): Record<string, number[]> {
+  const result: Record<string, number[]> = {};
+  ReportUtils.visitTests(report, test => {
+    result[test.title] = test.attempts.map(attempt => attempt.duration ?? 0);
+  });
+  return result;
 }

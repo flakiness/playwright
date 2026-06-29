@@ -142,6 +142,33 @@ async function runFlakinessPlaywrightShard(
   });
 }
 
+async function runFlakinessPlaywrightTimings(
+  targetDir: string,
+  extraEnv: Record<string, string> | undefined,
+  cliArgs: string[] = [],
+) {
+  const timingsCli = path.join(PROJECT_ROOT, 'lib', 'flakiness-playwright-timings.js');
+  assert(fs.existsSync(timingsCli), `missing flakiness-playwright-timings CLI at ${timingsCli}`);
+  const env = {
+    ...process.env,
+    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
+    ...(extraEnv ?? {}),
+  };
+  delete (env as any)['CI'];
+  return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
+    execFile(process.execPath, [timingsCli, ...cliArgs], {
+      cwd: targetDir,
+      env,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60_000,
+    }, (error, stdout, stderr) => {
+      const exitCode = error ? (typeof (error as any).code === 'number' ? (error as any).code : 1) : 0;
+      resolve({ stdout, stderr, exitCode });
+    });
+  });
+}
+
 export async function generateFlakinessReport(
     testInfo: TestInfo,
     files: Record<string, string>,
@@ -163,6 +190,38 @@ export async function generateFlakinessReport(
   return {
     ...(await readReport(reportDir)),
     log: { stdout, stderr },
+  };
+}
+
+export async function fetchTimings(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    options?: FlakinessReporterOptions,
+    playwrightConfig?: PlaywrightTestConfig,
+    extraEnv?: Record<string, string>,
+    cliArgs: string[] = [],
+  ): Promise<{
+    log: {
+      stdout: string;
+      stderr: string;
+    };
+    timings: FlakinessReport.Report;
+    timingsFile: string;
+  }> {
+  using durationsServer = await startFakeDurationsServer();
+  const { targetDir } = await initializeDirectoryWithTests(testInfo, files, {
+    ...(options ?? {}),
+    endpoint: durationsServer.endpoint,
+    token: options?.token ?? 'fake-token',
+  }, playwrightConfig);
+
+  const timingsFile = path.join(targetDir, 'fetched-timings', 'timings.json');
+  const log = await runFlakinessPlaywrightTimings(targetDir, extraEnv, ['fetch', `--output=${timingsFile}`, ...cliArgs]);
+  assert.strictEqual(log.exitCode, 0, log.stderr || log.stdout);
+  return {
+    log,
+    timings: JSON.parse(fs.readFileSync(timingsFile, 'utf-8')) as FlakinessReport.Report,
+    timingsFile,
   };
 }
 
