@@ -204,18 +204,18 @@ export default class FlakinessReporter implements Reporter {
     }
 
     const shardRequest = parseShardEnv();
-    if (this._options._mode === 'list' && shardRequest) {
-      // Fetch durations from the Flakiness.io
+    if (this._options._mode === 'list' && shardRequest) {     
       const durationsReport = await fetchTestDurations(report, {
-        flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
-        flakinessEndpoint: this._options.endpoint,
-      });
-      // Map durations to the test case instances.
+            flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
+            flakinessEndpoint: this._options.endpoint,
+          });
       const testCaseDurations = new Map<TestCase, number>();
       ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
         for (const attempt of test.attempts) {
-          const envName = durationsReport.environments[attempt.environmentIdx ?? 0].name;
-          const fkTestId = computeFKTestId(envName, test, parentSuites);
+          const env = durationsReport.environments[attempt.environmentIdx ?? 0];
+          if (!env)
+            continue;
+          const fkTestId = computeFKTestId(env.name, test, parentSuites);
           const testCase = testMappings.get(fkTestId);
           if (testCase && attempt.duration !== undefined)
             testCaseDurations.set(testCase, attempt.duration);
@@ -282,7 +282,11 @@ function parseShardEnv(): ShardRequest | undefined {
   const fileValue = process.env.FLAKINESS_SHARD_FILE;
   if (!slot || !fileValue)
     return undefined;
-  return { current: slot.current, total: slot.total, outputFile: fileValue };
+  return {
+    current: slot.current,
+    total: slot.total,
+    outputFile: fileValue,
+  };
 }
 
 // Default report title when this run is part of a shard. Prefers Playwright's
