@@ -14,7 +14,8 @@ type Shard = {
 const usage = `Usage:
   flakiness-playwright-shard --shard=1/2 [playwright test args...]
 
-Runs Playwright Test with Flakiness balanced sharding.
+Runs Playwright Test with balanced sharding, using either Flakiness.io historic
+durations or a timings file for duration hints.
 
 Options:
   --shard=N/M        Generate and run the balanced shard N of M (required).
