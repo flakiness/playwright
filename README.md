@@ -99,6 +99,21 @@ Any additional arguments are passed through to `playwright test`:
 npx flakiness-playwright-shard --shard=1/2 --project=chromium tests/e2e
 ```
 
+### Sharding from a local timings file
+
+By default durations are fetched from the Flakiness.io Durations API. These change as more and more
+data gets uploaded to the service, allowing for more precise test duration predictions.
+
+In real-world large test suites, though, tests are not hermetic and do rely on their order and
+specific sharding. So instead of fetching dynamic test duration predicutions from the Flakiness.io,
+clients can pass a `--timings=<file>` flag to use previous run test durations as balancing hints:
+
+```bash
+npx flakiness-playwright-shard --shard=1/2 --timings=./flakiness-report/report.json
+```
+
+Tests missing from the file fall back to a default weight, so a stale or partial timings file still produces a valid (if less balanced) split.
+
 ### Sharding granularity
 
 `flakiness-playwright-shard` splits work into the same indivisible units that Playwright assigns to its workers, then balances those units across shards by historical duration. The unit follows your Playwright parallelism configuration:

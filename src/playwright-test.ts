@@ -1,5 +1,5 @@
 import {
-  FlakinessReport as FK,
+  FlakinessReport as FK
 } from '@flakiness/flakiness-report';
 import {
   CPUUtilization,
@@ -10,11 +10,12 @@ import {
   showReport,
   showReportCommand,
   uploadReport,
-  writeReport,
+  writeReport
 } from '@flakiness/sdk';
 import { BrowserType } from '@playwright/test';
 import type {
   FullConfig,
+  FullProject,
   FullResult,
   Reporter,
   Suite, TestCase, TestError, TestResult
@@ -151,7 +152,14 @@ export default class FlakinessReporter implements Reporter {
     }
     const { commitId, worktree } = worktreeResult;
 
-    const { projects, report, attachments, unaccessibleAttachmentPaths, testMappings } = await buildReport({
+    const {
+      projects,
+      report,
+      attachments,
+      unaccessibleAttachmentPaths,
+      testMappings,
+      projectToEnvNames,
+    } = await buildReport({
       commitId,
       worktree,
       config: this._config,
@@ -203,26 +211,15 @@ export default class FlakinessReporter implements Reporter {
       }
     }
 
-    const shardRequest = parseShardEnv();
-    if (this._options._mode === 'list' && shardRequest) {     
-      const durationsReport = await fetchTestDurations(report, {
-            flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
-            flakinessEndpoint: this._options.endpoint,
-          });
-      const testCaseDurations = new Map<TestCase, number>();
-      ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
-        for (const attempt of test.attempts) {
-          const env = durationsReport.environments[attempt.environmentIdx ?? 0];
-          if (!env)
-            continue;
-          const fkTestId = computeFKTestId(env.name, test, parentSuites);
-          const testCase = testMappings.get(fkTestId);
-          if (testCase && attempt.duration !== undefined)
-            testCaseDurations.set(testCase, attempt.duration);
-        }
+    const shardRequest = this._options._mode === 'list' ? parseShardEnv() : undefined;
+    if (shardRequest) {
+      const durationsReport = shardRequest.timingsFile ? await readTimingsReport(shardRequest.timingsFile) : await fetchTestDurations(report, {
+        flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
+        flakinessEndpoint: this._options.endpoint,
       });
-      const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, testCaseDurations);
-      await fs.promises.writeFile(shardRequest.outputFile, shardFile);
+      const durationPredictions = computeDurationPredictions(durationsReport, projectToEnvNames, testMappings);
+      const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, durationPredictions);
+      await fs.promises.writeFile(shardRequest.testListFile, shardFile);
       // Workaround https://github.com/nodejs/node/issues/56645
       if (process.platform === 'win32')
         await new Promise(x => setTimeout(x, 100));
@@ -275,7 +272,12 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
-type ShardRequest = { current: number, total: number, outputFile: string };
+type ShardRequest = {
+  current: number,
+  total: number,
+  testListFile: string,
+  timingsFile?: string,
+};
 
 function parseShardEnv(): ShardRequest | undefined {
   const slot = parseShardSlot(process.env.FLAKINESS_SHARD);
@@ -285,7 +287,8 @@ function parseShardEnv(): ShardRequest | undefined {
   return {
     current: slot.current,
     total: slot.total,
-    outputFile: fileValue,
+    testListFile: fileValue,
+    timingsFile: process.env.FLAKINESS_TIMINGS_FILE,
   };
 }
 
@@ -296,4 +299,57 @@ function parseShardEnv(): ShardRequest | undefined {
 function defaultShardTitle(config: FullConfig): string | undefined {
   const slot = config.shard ?? parseShardSlot(process.env[SHARD_HINT_ENV]);
   return slot ? `Shard ${slot.current}/${slot.total}` : undefined;
+}
+
+async function readTimingsReport(aPath: string): Promise<FK.Report> {
+  let text: string;
+  try {
+    text = await fs.promises.readFile(aPath, 'utf-8');
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new Error(`[flakiness.io] cannot read --timings file "${aPath}": ${reason}`);
+  }
+  try {
+    return JSON.parse(text) as FK.Report;
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new Error(`[flakiness.io] cannot parse --timings file "${aPath}" as JSON: ${reason}`);
+  }
+}
+
+function computeDurationPredictions(durationsReport: FK.Report, projectToEnvNames: Map<FullProject, string>, testMappings: Map<string, TestCase[]>) {
+  const durationPredictions = new Map<TestCase, number>();
+  ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
+    // Accumulate test durations per environment: we consider test duration to be a cumulative
+    // of all attempts per environment. For example, if it reliably passes only on the second try, then
+    // its duration is the sum of the both attempts.
+    const durationsPerEnv = new Map<string, number>();
+    for (const attempt of test.attempts) {
+      const envName = durationsReport.environments[attempt.environmentIdx ?? 0]?.name;
+      // Defensive programming: this should never happen.
+      if (!envName)
+        continue;
+      const acc = durationsPerEnv.get(envName) ?? 0;
+      durationsPerEnv.set(envName, acc + (attempt.duration ?? 0));
+    }
+    // No data for the test? Skip it and rely on DEFAULT_DURATION.
+    if (!durationsPerEnv.size)
+      return;
+    const maxDuration = Math.max(...Array.from(durationsPerEnv.values()));
+
+    const fkTestId = computeFKTestId(test, parentSuites);
+    const testCases = testMappings.get(fkTestId) ?? [];
+    for (const testCase of testCases) {
+      // For each test case, find an envName it is mapped to.
+      const project = testCase.parent.project();
+      const envName = project ? projectToEnvNames.get(project) : undefined;
+      // For each test case, we want to find the best timing approximation.
+      // We either try to find the environment with the same name (these should be unique),
+      // and otherwise use a max duration.
+      const envDuration = envName ? durationsPerEnv.get(envName) : undefined;
+      // We fallback to the max of the test durations across environments.
+      durationPredictions.set(testCase, envDuration ?? maxDuration);
+    }
+  });
+  return durationPredictions;
 }

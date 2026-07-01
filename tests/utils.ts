@@ -166,7 +166,7 @@ export async function generateFlakinessReport(
   };
 }
 
-export async function runPerfectShards(
+export async function runBalancedShards(
     testInfo: TestInfo,
     files: Record<string, string>,
     shards: number,
@@ -197,6 +197,22 @@ export async function runPerfectShards(
     result.push({ report, totalWeight: reportTotalWeight(report) });
   }
   return result;
+}
+
+// Runs a single balanced shard and returns the raw process result WITHOUT
+// asserting a zero exit code. Use this to test failure paths (e.g. a bad
+// --timings file) where the shard generation is expected to fail.
+export async function runBalancedShardRaw(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    shard: string,
+    options?: FlakinessReporterOptions,
+    playwrightConfig?: PlaywrightTestConfig,
+    extraEnv?: Record<string, string>,
+    cliArgs: string[] = [],
+  ): Promise<{ stdout: string, stderr: string, exitCode: number | null }> {
+  const { targetDir } = await initializeDirectoryWithTests(testInfo, files, options, playwrightConfig);
+  return await runFlakinessPlaywrightShard(targetDir, extraEnv, shard, cliArgs);
 }
 
 function reportTotalWeight(report: FlakinessReport.Report): number {
@@ -235,4 +251,19 @@ export function assertStatus(status: FlakinessReport.TestStatus | undefined, exp
 export function assertStdioEntry(entry: FlakinessReport.TimedSTDIOEntry, text: string, expected: FlakinessReport.Stream) {
   expect(entry.stream ?? FlakinessReport.STREAM_STDOUT).toBe(expected);
   expect((entry as any).text).toBe(text);
+}
+
+export function reportTestCount(report: FlakinessReport.Report): number {
+  let count = 0;
+  ReportUtils.visitTests(report, test => count += test.attempts.length);
+  return count;
+}
+
+export function reportTestTitles(report: FlakinessReport.Report): string[] {
+  const titles: string[] = [];
+  ReportUtils.visitTests(report, test => {
+    for (const _attempt of test.attempts)
+      titles.push(test.title);
+  });
+  return titles;
 }

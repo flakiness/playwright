@@ -14,10 +14,14 @@ type Shard = {
 const usage = `Usage:
   flakiness-playwright-shard --shard=1/2 [playwright test args...]
 
-Runs Playwright Test with Flakiness perfect sharding.
+Runs Playwright Test with balanced sharding, using either Flakiness.io historic
+durations or a timings file for duration hints.
 
 Options:
   --shard=N/M        Generate and run the balanced shard N of M (required).
+  --timings=<file>   Balance the shard using durations from a Flakiness report
+                     JSON file (e.g. a previous run's flakiness-report/report.json)
+                     instead of fetching them from the Flakiness.io Durations API.
 
 All other arguments are passed through to "playwright test".`;
 
@@ -25,6 +29,7 @@ async function main() {
   const { values, flags, passthrough } = parseArgs(process.argv.slice(2), {
     values: [
       { name: 'shard', aliases: ['--shard'] },
+      { name: 'timings', aliases: ['--timings'] },
     ],
     bools: [
       { name: 'help', aliases: ['-h', '--help'] },
@@ -48,14 +53,15 @@ async function main() {
       ...process.env,
       FLAKINESS_SHARD: `${shard.current}/${shard.total}`,
       FLAKINESS_SHARD_FILE: shardFile,
+      FLAKINESS_TIMINGS_FILE: values.timings,
     }, false);
     console.error(`Done ${formatDuration(Date.now() - startTime)}`);
     if (listExitCode !== 0) {
-      console.error(`failed to generate perfect shard: playwright exited with code ${listExitCode}`);
+      console.error(`failed to generate balanced shard: playwright exited with code ${listExitCode}`);
       return listExitCode;
     }
     if (!fs.existsSync(shardFile))
-      throw new Error('failed to generate perfect shard: shard file was not created. Is @flakiness/playwright configured as a reporter?');
+      throw new Error('failed to generate balanced shard: shard file was not created. Is @flakiness/playwright configured as a reporter?');
 
     const runArgs = [`--test-list=${shardFile}`, ...passthrough];
     if (!passthrough.some(arg => isFlag(arg, '--pass-with-no-tests')))
