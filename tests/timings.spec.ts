@@ -81,3 +81,83 @@ test('should balance shards using per-environment durations from a --timings fil
   ]);
   expect(fastShards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([2, 2]);
 });
+
+test('should fallback to durations when env name does not match', async ({}, testInfo) => {
+  const files = {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+      test('beta', async () => {});
+      test('gamma', async () => {});
+      test('delta', async () => {});
+    `,
+  };
+  const playwrightConfig = {
+    fullyParallel: true,
+  };
+
+  const { report } = await generateFlakinessReport(testInfo, files, {}, playwrightConfig);
+  const weights: Record<string, number> = {
+    'alpha': 100_000,
+    'beta': 1,
+    'gamma': 1,
+    'delta': 1,
+  };
+  ReportUtils.visitTests(report, t => {
+    for (const attempt of t.attempts)
+      attempt.duration = weights[t.title] as FlakinessReport.DurationMS;
+  });
+  // Amend environments so that timings are recorded for some weird env.
+  report.environments = [{
+    name: 'very unusual name',
+    systemData: {
+      osArch: 'nonexistent',
+      osName: 'weirdos',
+      osVersion: '2.2.22',
+    },
+  }];
+  const timingsFile = testInfo.outputPath('timings.json');
+  fs.writeFileSync(timingsFile, JSON.stringify(report));
+
+  // Make sure that sharding still uses the duration hints despite the unusual environment.
+  const shards = await runBalancedShards(testInfo, files, 2, {}, playwrightConfig, undefined, [
+    `--timings=${timingsFile}`,
+  ]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
+});
+
+test('should still shard when there are new tests', async ({}, testInfo) => {
+  const playwrightConfig = { fullyParallel: true };
+  const { report } = await generateFlakinessReport(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+    `,
+  }, {}, playwrightConfig);
+  const weights: Record<string, number> = {
+    'alpha': 100_000,
+  };
+  ReportUtils.visitTests(report, t => {
+    for (const attempt of t.attempts)
+      attempt.duration = weights[t.title] as FlakinessReport.DurationMS;
+  });
+  const timingsFile = testInfo.outputPath('timings.json');
+  fs.writeFileSync(timingsFile, JSON.stringify(report));
+
+  // Make sure that sharding still uses the duration hints despite the unusual environment.
+  const shards = await runBalancedShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+      test('beta', async () => {});
+      test('gamma', async () => {});
+      test('delta', async () => {});
+    `,
+  }, 2, {}, playwrightConfig, undefined, [
+    `--timings=${timingsFile}`,
+  ]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
+});
