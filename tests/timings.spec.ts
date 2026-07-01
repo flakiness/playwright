@@ -146,7 +146,8 @@ test('should still shard when there are new tests', async ({}, testInfo) => {
   const timingsFile = testInfo.outputPath('timings.json');
   fs.writeFileSync(timingsFile, JSON.stringify(report));
 
-  // Make sure that sharding still uses the duration hints despite the unusual environment.
+  // Add new tests that haven't been seen before; make sure
+  // shard balancing works with them.
   const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
