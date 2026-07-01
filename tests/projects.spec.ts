@@ -88,9 +88,6 @@ test('should have a reasonable name for default project', async ({}, testInfo) =
 });
 
 test('should give unique environment names to multiple anonymous projects', async ({}, testInfo) => {
-  // Each Playwright project maps to a distinct Flakiness environment, and the
-  // environment name is the first component of a test's id. If two projects
-  // shared an environment name, their tests would collapse onto the same id.
   const { report } = await generateFlakinessReport(testInfo, {
     'file.spec.ts': `
       import { test } from '@playwright/test';
