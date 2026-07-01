@@ -236,6 +236,5 @@ test('should fail with a clear message when the --timings file is malformed', as
   ]);
   expect(exitCode).not.toBe(0);
   expect(stderr).toContain('--timings file');
-  console.log(stderr);
   expect(stderr).toMatch(/JSON|parse/i);
 });
