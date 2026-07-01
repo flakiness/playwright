@@ -2,7 +2,8 @@ import { FlakinessReport } from '@flakiness/flakiness-report';
 import { ReportUtils } from '@flakiness/sdk';
 import { expect, test } from '@playwright/test';
 import fs from 'fs';
-import { generateFlakinessReport, reportTestCount, reportTestTitles, runBalancedShards } from './utils.js';
+import { DEFAULT_DURATION } from '../src/sharding.js';
+import { generateFlakinessReport, reportTestCount, reportTestTitles, runBalancedShardRaw, runBalancedShards } from './utils.js';
 
 test('should balance shards using a --timings file instead of the Durations API', async ({}, testInfo) => {
   const files = {
@@ -161,4 +162,80 @@ test('should still shard when there are new tests', async ({}, testInfo) => {
     `--timings=${timingsFile}`,
   ]);
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
+});
+
+test('should accumulate retries when estimating test duration', async ({}, testInfo) => {
+  const playwrightConfig = { fullyParallel: true };
+  const { report } = await generateFlakinessReport(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+    `,
+  }, {}, playwrightConfig);
+  // Synthesize the report with 10 retries, each with DEFAULT_DURATION duration.
+  ReportUtils.visitTests(report, t => {
+    t.attempts = [];
+    for (let i = 0; i < 10; ++i) {
+      t.attempts.push({
+        startTimestamp: 0 as FlakinessReport.UnixTimestampMS,
+        duration: DEFAULT_DURATION as FlakinessReport.DurationMS,
+      });
+    }
+  });
+  const timingsFile = testInfo.outputPath('timings.json');
+  fs.writeFileSync(timingsFile, JSON.stringify(report));
+
+  // Add new tests that haven't been seen before; they still all hit the other shard, since
+  // the one test we have takes 10 retries and will fully occupy one of the shards.
+  const shards = await runBalancedShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+      test('beta', async () => {});
+      test('gamma', async () => {});
+      test('delta', async () => {});
+    `,
+  }, 2, {}, playwrightConfig, undefined, [
+    `--timings=${timingsFile}`,
+  ]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
+});
+
+test('should fail with a clear message when the --timings file is missing', async ({}, testInfo) => {
+  const files = {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+    `,
+  };
+  const missing = testInfo.outputPath('does-not-exist.json');
+  const { exitCode, stderr } = await runBalancedShardRaw(testInfo, files, '1/2', {}, { fullyParallel: true }, undefined, [
+    `--timings=${missing}`,
+  ]);
+  expect(exitCode).not.toBe(0);
+  // The error must point at the timings file, not at some unrelated cause.
+  expect(stderr).toContain('--timings file');
+  expect(stderr).toContain(missing);
+});
+
+test('should fail with a clear message when the --timings file is malformed', async ({}, testInfo) => {
+  const files = {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('alpha', async () => {});
+    `,
+  };
+  const badTimings = testInfo.outputPath('bad-timings.json');
+  fs.writeFileSync(badTimings, 'this is not valid json {{{');
+  const { exitCode, stderr } = await runBalancedShardRaw(testInfo, files, '1/2', {}, { fullyParallel: true }, undefined, [
+    `--timings=${badTimings}`,
+  ]);
+  expect(exitCode).not.toBe(0);
+  expect(stderr).toContain('--timings file');
+  console.log(stderr);
+  expect(stderr).toMatch(/JSON|parse/i);
 });

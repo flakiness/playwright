@@ -13,7 +13,7 @@ type ShardGroup = {
 }
 
 // Default to 1 second 'predicted duration' for tests without duration hints.
-const DEFAULT_DURATION = 1000;
+export const DEFAULT_DURATION = 1000;
 
 // Set by `flakiness-playwright-shard` on the real test run so the reporter knows
 // it is executing shard N/M. The wrapper selects tests via `--test-list`, so

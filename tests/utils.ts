@@ -199,6 +199,22 @@ export async function runBalancedShards(
   return result;
 }
 
+// Runs a single balanced shard and returns the raw process result WITHOUT
+// asserting a zero exit code. Use this to test failure paths (e.g. a bad
+// --timings file) where the shard generation is expected to fail.
+export async function runBalancedShardRaw(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    shard: string,
+    options?: FlakinessReporterOptions,
+    playwrightConfig?: PlaywrightTestConfig,
+    extraEnv?: Record<string, string>,
+    cliArgs: string[] = [],
+  ): Promise<{ stdout: string, stderr: string, exitCode: number | null }> {
+  const { targetDir } = await initializeDirectoryWithTests(testInfo, files, options, playwrightConfig);
+  return await runFlakinessPlaywrightShard(targetDir, extraEnv, shard, cliArgs);
+}
+
 function reportTotalWeight(report: FlakinessReport.Report): number {
   let totalWeight = 0;
   ReportUtils.visitTests(report, test => {
