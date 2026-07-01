@@ -86,3 +86,18 @@ test('should have a reasonable name for default project', async ({}, testInfo) =
   expect(report.environments.length).toBe(1);
   expect(report.environments[0].name).toBe('anonymous');
 });
+
+test('should give unique environment names to multiple anonymous projects', async ({}, testInfo) => {
+  const { report } = await generateFlakinessReport(testInfo, {
+    'file.spec.ts': `
+      import { test } from '@playwright/test';
+      test('test', async () => { });
+    `,
+  }, {}, {
+    projects: [{}, {}, {}],
+  });
+  expect(report.environments.length).toBe(3);
+  const names = report.environments.map(env => env.name);
+  expect(new Set(names).size).toBe(names.length);
+  expect(names).toEqual(['anonymous', 'anonymous-2', 'anonymous-3']);
+});
