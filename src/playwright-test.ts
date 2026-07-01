@@ -218,6 +218,9 @@ export default class FlakinessReporter implements Reporter {
       });
       const durationPredictions = new Map<TestCase, number>();
       ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
+        // No data for the test? Skip it.
+        if (!test.attempts.length)
+          return;
         const fkTestId = computeFKTestId(test, parentSuites);
         const testCases = testMappings.get(fkTestId) ?? [];
         for (const testCase of testCases) {
@@ -230,9 +233,7 @@ export default class FlakinessReporter implements Reporter {
           const envDuration = test.attempts.find(attempt => durationsReport.environments[attempt.environmentIdx ?? 0]?.name === envName)?.duration;
           // We fallback to the max of the test durations across environments.
           const maxDuration = test.attempts.reduce((acc, attempt) => Math.max(acc, attempt.duration ?? 0), 0);
-          // We never accept that a test can be executed "for free": we assign at least
-          const predictedDuration = Math.max(envDuration ?? maxDuration, 1);
-          durationPredictions.set(testCase, predictedDuration);
+          durationPredictions.set(testCase, envDuration ?? maxDuration);
         }
       });
       const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, durationPredictions);
