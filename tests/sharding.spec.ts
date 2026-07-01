@@ -1,10 +1,8 @@
-import type { FlakinessReport } from '@flakiness/flakiness-report';
-import { ReportUtils } from '@flakiness/sdk';
 import { expect, test } from '@playwright/test';
-import { runPerfectShards } from './utils.js';
+import { reportTestCount, reportTestTitles, runBalancedShards } from './utils.js';
 
 test('should generate perfect shards', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -21,7 +19,7 @@ test('should generate perfect shards', async ({}, testInfo) => {
 });
 
 test('should generate perfect shards across independent projects', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -44,7 +42,7 @@ test('should generate perfect shards across independent projects', async ({}, te
 });
 
 test('should shard tests without historical durations', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -60,7 +58,7 @@ test('should shard tests without historical durations', async ({}, testInfo) => 
 });
 
 test('should keep repeatEach instances of one test in one shard', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -75,7 +73,7 @@ test('should keep repeatEach instances of one test in one shard', async ({}, tes
 });
 
 test('should keep tests from serial suites in one shard', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -108,7 +106,7 @@ test('should keep tests from serial suites in one shard', async ({}, testInfo) =
 });
 
 test('should keep serial suite tests together while sharding standalone tests', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -139,7 +137,7 @@ test('should keep serial suite tests together while sharding standalone tests', 
 });
 
 test('should keep nested tests from configured serial suites in one shard', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -170,7 +168,7 @@ test('should keep nested tests from configured serial suites in one shard', asyn
 });
 
 test('should keep distinct serial suites with the same title on separate shards', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -193,7 +191,7 @@ test('should keep distinct serial suites with the same title on separate shards'
 });
 
 test('should reject reporter override for balanced sharding', async ({}, testInfo) => {
-  await expect(runPerfectShards(testInfo, {
+  await expect(runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -203,7 +201,7 @@ test('should reject reporter override for balanced sharding', async ({}, testInf
 });
 
 test('should reject Playwright shard argument for balanced sharding', async ({}, testInfo) => {
-  await expect(runPerfectShards(testInfo, {
+  await expect(runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -213,7 +211,7 @@ test('should reject Playwright shard argument for balanced sharding', async ({},
 });
 
 test('should generate perfect shards with dependent projects', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -244,7 +242,7 @@ test('should generate perfect shards with dependent projects', async ({}, testIn
 });
 
 test('should shard dependency projects selected with project filter', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -269,7 +267,7 @@ test('should shard dependency projects selected with project filter', async ({},
 });
 
 test('should generate perfect shards with teardown projects', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -308,7 +306,7 @@ test('should generate perfect shards with teardown projects', async ({}, testInf
 });
 
 test('should pay setup cost once when independent tests can fill other shards', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -344,7 +342,7 @@ test('should pay setup cost once when independent tests can fill other shards', 
 });
 
 test('should duplicate setup across shards when dependent tests dominate', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -371,7 +369,7 @@ test('should duplicate setup across shards when dependent tests dominate', async
 });
 
 test('should not split one atomic dependent group across extra shards', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -407,7 +405,7 @@ test('should not split one atomic dependent group across extra shards', async ({
 });
 
 test('should share one setup across browser projects on every shard', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -436,7 +434,7 @@ test('should share one setup across browser projects on every shard', async ({},
 });
 
 test('should prefer shards that already run shared dependency projects', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -482,7 +480,7 @@ test('should prefer shards that already run shared dependency projects', async (
 });
 
 test('should account only for missing setup when deciding family span', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup-a.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -548,7 +546,7 @@ test('should account only for missing setup when deciding family span', async ({
 });
 
 test('should use the widest family span when span costs are tied', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'setup-a.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -586,7 +584,7 @@ test('should use the widest family span when span costs are tied', async ({}, te
 });
 
 test('should not split a non-fully-parallel spec file across shards', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -604,7 +602,7 @@ test('should not split a non-fully-parallel spec file across shards', async ({},
 });
 
 test('should distribute whole spec files across shards by default', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'alpha.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -634,7 +632,7 @@ test('should distribute whole spec files across shards by default', async ({}, t
 });
 
 test('should shard a parallel describe per-test even without fullyParallel', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'plain.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -656,18 +654,3 @@ test('should shard a parallel describe per-test even without fullyParallel', asy
   // (Were the block sequential, it would be one atomic group and yield 30 / 10.)
   expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([20, 20]);
 });
-
-function reportTestCount(report: FlakinessReport.Report): number {
-  let count = 0;
-  ReportUtils.visitTests(report, test => count += test.attempts.length);
-  return count;
-}
-
-function reportTestTitles(report: FlakinessReport.Report): string[] {
-  const titles: string[] = [];
-  ReportUtils.visitTests(report, test => {
-    for (const _attempt of test.attempts)
-      titles.push(test.title);
-  });
-  return titles;
-}

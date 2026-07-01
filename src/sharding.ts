@@ -12,6 +12,9 @@ type ShardGroup = {
   deps: Map<string, number>,
 }
 
+// Default to 1 second 'predicted duration' for tests without duration hints.
+const DEFAULT_DURATION = 1000;
+
 // Set by `flakiness-playwright-shard` on the real test run so the reporter knows
 // it is executing shard N/M. The wrapper selects tests via `--test-list`, so
 // Playwright's native `config.shard` is null and this hint is the only signal.
@@ -30,8 +33,8 @@ export function parseShardSlot(value: string | undefined): ShardSlot | undefined
   return { current, total };
 }
 
-export function generateBalancedShard(request: ShardSlot, config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>): string {
-  const shardGropus = prepareShardableTestEntries(config, rootSuite, testCaseDurations);
+export function generateBalancedShard(request: ShardSlot, config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>): string {
+  const shardGropus = prepareShardableTestEntries(config, rootSuite, durationPredictions);
   const shards = balanceShards(shardGropus, request.total);
   const selectedShard = shards[request.current - 1];
   const testIds = selectedShard.map(shard => shard.ids).flat();
@@ -199,7 +202,7 @@ function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
   return result;
 }
 
-function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testCaseDurations: Map<TestCase, number>) {
+function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>) {
   // We consider both dependencies and teardown as "dependencies".
   const scheduledProjects = new Set(rootSuite.allTests().map(test => test.parent.project()).filter(x => x !== undefined));
   const projectDependencies = new Map<string, string[]>(Array.from(scheduledProjects).map(project => [project.name, [
@@ -225,15 +228,12 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
     return [proj, allDeps]
   }));
 
-  // Default duration should be either P50 if we have SOME data, or just 1 second otherwise.
-  const defaultDuration = testCaseDurations.size > 0 ? Array.from(testCaseDurations.values()).sort((a, b) => a - b)[testCaseDurations.size / 2 | 0] : 1000;
-
   const projectDurations = new Map<string, number>();
   for (const testCase of rootSuite.allTests()) {
     const project = testCase.parent.project();
     if (!project)
       continue;
-    projectDurations.set(project.name, (projectDurations.get(project.name) ?? 0) + (testCaseDurations.get(testCase) ?? defaultDuration));
+    projectDurations.set(project.name, (projectDurations.get(project.name) ?? 0) + (durationPredictions.get(testCase) ?? DEFAULT_DURATION));
   }
 
   // Group all tests into shard groups. Each shard group is identified either by
@@ -257,7 +257,7 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, testC
       shardGroups.set(shardGroupId, shardGroup);
     }
     shardGroup.ids.push(testEntryId);
-    shardGroup.work += testCaseDurations.get(testCase) ?? defaultDuration;
+    shardGroup.work += durationPredictions.get(testCase) ?? DEFAULT_DURATION;
     for (const dep of leafProjectClosure.get(proj.name) ?? [])
       shardGroup.deps.set(dep, projectDurations.get(dep) ?? 0);
   }

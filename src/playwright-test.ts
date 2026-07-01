@@ -1,5 +1,5 @@
 import {
-  FlakinessReport as FK,
+  FlakinessReport as FK
 } from '@flakiness/flakiness-report';
 import {
   CPUUtilization,
@@ -10,7 +10,7 @@ import {
   showReport,
   showReportCommand,
   uploadReport,
-  writeReport,
+  writeReport
 } from '@flakiness/sdk';
 import { BrowserType } from '@playwright/test';
 import type {
@@ -151,7 +151,14 @@ export default class FlakinessReporter implements Reporter {
     }
     const { commitId, worktree } = worktreeResult;
 
-    const { projects, report, attachments, unaccessibleAttachmentPaths, testMappings } = await buildReport({
+    const {
+      projects,
+      report,
+      attachments,
+      unaccessibleAttachmentPaths,
+      testMappings,
+      projectToEnvNames,
+    } = await buildReport({
       commitId,
       worktree,
       config: this._config,
@@ -203,26 +210,33 @@ export default class FlakinessReporter implements Reporter {
       }
     }
 
-    const shardRequest = parseShardEnv();
-    if (this._options._mode === 'list' && shardRequest) {     
-      const durationsReport = await fetchTestDurations(report, {
-            flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
-            flakinessEndpoint: this._options.endpoint,
-          });
-      const testCaseDurations = new Map<TestCase, number>();
+    const shardRequest = this._options._mode === 'list' ? parseShardEnv() : undefined;
+    if (shardRequest) {
+      const durationsReport = shardRequest.timingsFile ? await readJSON(shardRequest.timingsFile) : await fetchTestDurations(report, {
+        flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
+        flakinessEndpoint: this._options.endpoint,
+      });
+      const durationPredictions = new Map<TestCase, number>();
       ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
-        for (const attempt of test.attempts) {
-          const env = durationsReport.environments[attempt.environmentIdx ?? 0];
-          if (!env)
-            continue;
-          const fkTestId = computeFKTestId(env.name, test, parentSuites);
-          const testCase = testMappings.get(fkTestId);
-          if (testCase && attempt.duration !== undefined)
-            testCaseDurations.set(testCase, attempt.duration);
+        const fkTestId = computeFKTestId(test, parentSuites);
+        const testCases = testMappings.get(fkTestId) ?? [];
+        for (const testCase of testCases) {
+          // For each test case, find an envName it is mapped to.
+          const project = testCase.parent.project();
+          const envName = project ? projectToEnvNames.get(project) : undefined;
+          // For each test case, we want to find the best timing approximation.
+          // We either try to find the environment with the same name (these should be unique),
+          // and otherwise use an average duration.
+          const envDuration = test.attempts.find(attempt => durationsReport.environments[attempt.environmentIdx ?? 0]?.name === envName)?.duration;
+          // We fallback to the max of the test durations across environments.
+          const maxDuration = test.attempts.reduce((acc, attempt) => Math.max(acc, attempt.duration ?? 0), 0);
+          // We never accept that a test can be executed "for free": we assign at least
+          const predictedDuration = Math.max(envDuration ?? maxDuration, 1);
+          durationPredictions.set(testCase, predictedDuration);
         }
       });
-      const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, testCaseDurations);
-      await fs.promises.writeFile(shardRequest.outputFile, shardFile);
+      const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, durationPredictions);
+      await fs.promises.writeFile(shardRequest.testListFile, shardFile);
       // Workaround https://github.com/nodejs/node/issues/56645
       if (process.platform === 'win32')
         await new Promise(x => setTimeout(x, 100));
@@ -275,7 +289,12 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
-type ShardRequest = { current: number, total: number, outputFile: string };
+type ShardRequest = {
+  current: number,
+  total: number,
+  testListFile: string,
+  timingsFile?: string,
+};
 
 function parseShardEnv(): ShardRequest | undefined {
   const slot = parseShardSlot(process.env.FLAKINESS_SHARD);
@@ -285,7 +304,8 @@ function parseShardEnv(): ShardRequest | undefined {
   return {
     current: slot.current,
     total: slot.total,
-    outputFile: fileValue,
+    testListFile: fileValue,
+    timingsFile: process.env.FLAKINESS_TIMINGS_FILE,
   };
 }
 
@@ -296,4 +316,10 @@ function parseShardEnv(): ShardRequest | undefined {
 function defaultShardTitle(config: FullConfig): string | undefined {
   const slot = config.shard ?? parseShardSlot(process.env[SHARD_HINT_ENV]);
   return slot ? `Shard ${slot.current}/${slot.total}` : undefined;
+}
+
+async function readJSON(aPath: string) {
+  const text = await fs.promises.readFile(aPath, 'utf-8');
+  const json = JSON.parse(text);
+  return json as FK.Report;
 }

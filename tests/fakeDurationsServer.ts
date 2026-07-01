@@ -4,7 +4,7 @@ import { expect } from '@playwright/test';
 import http from 'node:http';
 import { brotliDecompressSync } from 'node:zlib';
 
-// Fake implementation of the testDurations API used by perfect-shard tests.
+// Fake implementation of the testDurations API used by balanced-shard tests.
 // It accepts an uploaded Flakiness report and returns the same report with historical
 // durations synthesized from test titles:
 //   w=100             every environment gets duration 100

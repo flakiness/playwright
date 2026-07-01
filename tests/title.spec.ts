@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { generateFlakinessReport, runPerfectShards } from './utils.js';
+import { generateFlakinessReport, runBalancedShards } from './utils.js';
 
 test('should default the report title to the shard slot', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -15,7 +15,7 @@ test('should default the report title to the shard slot', async ({}, testInfo) =
 });
 
 test('should let an explicit title override the shard slot', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
@@ -28,7 +28,7 @@ test('should let an explicit title override the shard slot', async ({}, testInfo
 });
 
 test('should let FLAKINESS_TITLE override the shard slot', async ({}, testInfo) => {
-  const shards = await runPerfectShards(testInfo, {
+  const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 

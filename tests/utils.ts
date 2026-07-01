@@ -166,7 +166,7 @@ export async function generateFlakinessReport(
   };
 }
 
-export async function runPerfectShards(
+export async function runBalancedShards(
     testInfo: TestInfo,
     files: Record<string, string>,
     shards: number,
@@ -235,4 +235,19 @@ export function assertStatus(status: FlakinessReport.TestStatus | undefined, exp
 export function assertStdioEntry(entry: FlakinessReport.TimedSTDIOEntry, text: string, expected: FlakinessReport.Stream) {
   expect(entry.stream ?? FlakinessReport.STREAM_STDOUT).toBe(expected);
   expect((entry as any).text).toBe(text);
+}
+
+export function reportTestCount(report: FlakinessReport.Report): number {
+  let count = 0;
+  ReportUtils.visitTests(report, test => count += test.attempts.length);
+  return count;
+}
+
+export function reportTestTitles(report: FlakinessReport.Report): string[] {
+  const titles: string[] = [];
+  ReportUtils.visitTests(report, test => {
+    for (const _attempt of test.attempts)
+      titles.push(test.title);
+  });
+  return titles;
 }

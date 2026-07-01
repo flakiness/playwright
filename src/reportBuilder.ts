@@ -40,11 +40,11 @@ type ProcessingContext = {
   unaccessibleAttachmentPaths: string[],
   results: Map<TestCase, Set<TestResult>>,
   stdio: Map<TestResult, StdIOEntry[]>,
-  testMappings: Map<string, TestCase>,
+  testMappings: Map<string, TestCase[]>,
 }
 
-export function computeFKTestId(envName: string, test: FK.Test, parentSuites: FK.Suite[]): string {
-  return JSON.stringify([envName, parentSuites.map(suite => suite.title), test.title]);
+export function computeFKTestId(test: FK.Test, parentSuites: FK.Suite[]): string {
+  return JSON.stringify([parentSuites.map(suite => suite.title), test.title]);
 }
 
 export async function buildReport(options: {
@@ -62,6 +62,7 @@ export async function buildReport(options: {
 }) {
   // get all projects
   const projects = options.rootSuite.suites.map(s => s.project()).filter(p => !!p);
+  const projectToEnvNames = new Map<FullProject, string>();
   // For each project, get an environment for that project
   const uniqueNames = new Set<string>();
   const environments: FK.Environment[] = projects.map(project => {
@@ -73,6 +74,7 @@ export async function buildReport(options: {
     for (let i = 2; uniqueNames.has(name); ++i)
       name = `${defaultName}-${i}`;
     uniqueNames.add(name);
+    projectToEnvNames.set(project, name);
     return ReportUtils.createEnvironment({ name });
   });
 
@@ -114,6 +116,7 @@ export async function buildReport(options: {
     unaccessibleAttachmentPaths: context.unaccessibleAttachmentPaths,
     attachments: Array.from(context.attachments.values()),
     testMappings: context.testMappings,
+    projectToEnvNames,
   };
 }
 
@@ -163,10 +166,13 @@ async function toFKTest(context: ProcessingContext, pwTest: TestCase, parentFKSu
     attempts: await Promise.all(Array.from(context.results.get(pwTest) ?? new Set<TestResult>()).map(result => toFKRunAttempt(context, pwTest, result))),
   };
 
-  const envIdx = context.projects.indexOf(pwTest.parent.project()!);
-  const envName = context.environments[envIdx].name;
-  const fkTestId = computeFKTestId(envName, test, parentFKSuites);
-  context.testMappings.set(fkTestId, pwTest);
+  const fkTestId = computeFKTestId(test, parentFKSuites);
+  let testIdToTestCases = context.testMappings.get(fkTestId);
+  if (!testIdToTestCases) {
+    testIdToTestCases = [];
+    context.testMappings.set(fkTestId, testIdToTestCases);
+  }
+  testIdToTestCases.push(pwTest);
   return test;
 }
 
