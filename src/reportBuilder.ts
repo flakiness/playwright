@@ -71,8 +71,8 @@ export async function buildReport(options: {
 
     let name = defaultName;
     for (let i = 2; uniqueNames.has(name); ++i)
-    name = `${defaultName}-${i}`;
-    uniqueNames.add(defaultName);
+      name = `${defaultName}-${i}`;
+    uniqueNames.add(name);
     return ReportUtils.createEnvironment({ name });
   });
 
