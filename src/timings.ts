@@ -33,11 +33,12 @@ export function distillTimings(reports: FlakinessReport.Report[]): FlakinessRepo
       // Accumulate all attempts per env
       const envDurations = new Map<number, FlakinessReport.DurationMS>();
       for (const attempt of test.attempts) {
-        if (attempt.duration === undefined)
-          continue;
+        // A missing duration is a real 0ms cost, not missing data: `normalizeReport`
+        // elides `duration === 0`, and our @flakiness/playwright reporter always emits
+        // durations.
         const envIdx = (attempt.environmentIdx ?? 0) + acc.environments.length;
         const sum = envDurations.get(envIdx) ?? 0;
-        envDurations.set(envIdx, sum + attempt.duration as FlakinessReport.DurationMS);
+        envDurations.set(envIdx, (sum + (attempt.duration ?? 0)) as FlakinessReport.DurationMS);
       }
       test.attempts = Array.from(envDurations, ([environmentIdx, duration]) => ({
         environmentIdx,
@@ -58,10 +59,8 @@ export function distillTimings(reports: FlakinessReport.Report[]): FlakinessRepo
     // Accumulate all attempts per env
     const envDurations = new Map<number, FlakinessReport.DurationMS>();
     for (const attempt of test.attempts) {
-      if (attempt.duration === undefined)
-        continue;
       const acc = envDurations.get(attempt.environmentIdx ?? 0) ?? -Infinity;
-      envDurations.set(attempt.environmentIdx ?? 0, Math.max(acc, attempt.duration) as FlakinessReport.DurationMS);
+      envDurations.set(attempt.environmentIdx ?? 0, Math.max(acc, attempt.duration ?? 0) as FlakinessReport.DurationMS);
     }
     test.attempts = Array.from(envDurations, ([environmentIdx, duration]) => ({
       environmentIdx,

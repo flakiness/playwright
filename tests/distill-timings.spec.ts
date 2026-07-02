@@ -259,3 +259,22 @@ test('unions tests seen across different reports', () => {
     { title: 'beta', attempts: [{ duration: 200 }] },
   ]);
 });
+
+test('preserves a zero-duration attempt instead of dropping it', () => {
+  const report = fillRequired({
+    environments: [{ name: 'chromium' }],
+    // A normalized report elides `duration === 0`, so a 0ms test arrives as an
+    // attempt with no `duration` field.
+    tests: [{
+      title: 'alpha',
+      attempts: [{}],
+    }],
+  });
+  const timings = distillTimings([report]);
+  // The 0ms cost must survive as an attempt (the balancer then reads 0), not
+  // vanish and fall back to DEFAULT_DURATION.
+  expect(timings.tests?.[0]).toEqual({
+    title: 'alpha',
+    attempts: [{}],
+  });
+});
