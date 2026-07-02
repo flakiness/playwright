@@ -3,7 +3,9 @@
 // after parsing a couple of their own flags off the front, so the argument
 // parsing, Playwright resolution and process handling live here once.
 
+import { FlakinessReport as FK } from '@flakiness/flakiness-report';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,6 +81,29 @@ export function parseArgs(args: string[], spec: ArgsSpec): ParsedArgs {
 
 export function formatDuration(durationMS: number): string {
   return `${(durationMS / 1000).toFixed(1)} seconds`;
+}
+
+// Reads and parses a Flakiness report JSON file, throwing errors that name the
+// offending file and the real cause (missing file, bad JSON, wrong shape).
+// `label` is the noun used in error messages (e.g. `--timings file`).
+export async function readReportFile(aPath: string, label = 'report'): Promise<FK.Report> {
+  let text: string;
+  try {
+    text = await fs.promises.readFile(aPath, 'utf-8');
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new Error(`cannot read ${label} "${aPath}": ${reason}`);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    throw new Error(`cannot parse ${label} "${aPath}" as JSON: ${reason}`);
+  }
+  if (!json || typeof json !== 'object' || !Array.isArray((json as { environments?: unknown }).environments))
+    throw new Error(`"${aPath}" does not look like a Flakiness report (missing "environments" array)`);
+  return json as FK.Report;
 }
 
 let playwrightCLI: string | undefined;
