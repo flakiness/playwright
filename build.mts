@@ -21,6 +21,7 @@ const { errors } = await esbuild.build({
   entryPoints: [
     path.join(srcDir, 'playwright-test.ts'),
     path.join(srcDir, 'flakiness-playwright-shard.ts'),
+    path.join(srcDir, 'flakiness-playwright-timings.ts'),
   ],
   outdir: outDir,
   format: 'esm',

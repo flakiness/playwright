@@ -114,6 +114,26 @@ npx flakiness-playwright-shard --shard=1/2 --timings=./flakiness-report/report.j
 
 Tests missing from the file fall back to a default weight, so a stale or partial timings file still produces a valid (if less balanced) split.
 
+### Building a timings file from past runs
+
+A raw `report.json` works as a `--timings` input, but it carries everything a full report does (steps, attachments, stdio) and only represents a **single** run. To combine several past runs into one compact, robust hint file, use the `flakiness-playwright-timings` binary:
+
+```bash
+npx flakiness-playwright-timings build report-1.json report-2.json report-3.json -o timings.json
+```
+
+It accepts one or more report files and writes a distilled timings report (to `timings.json` by default, or the `-o` path). Distillation:
+
+- **Tracks durations per environment name.** Durations are keyed by environment *name* — the same key the shard command matches on. Environment metadata (OS, worker count, browser version) is ignored, so the same project across different machines or CI runs merges into one entry.
+- **Sums retries, maxes across runs.** Within a single run, a test's retry attempts are summed (a test that only passes on its third try genuinely costs all three). Across runs, the per-run costs are combined with `max`, provisioning each shard for the slowest observed run rather than an average.
+- **Keeps only what the balancer needs.** Locations, tags, steps, attachments and statuses are dropped. When a test costs the same in every environment, a single duration is kept and the shard command's environment fallback covers the rest — keeping the file small.
+
+Then feed the result to the shard command:
+
+```bash
+npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
+```
+
 ### Sharding granularity
 
 `flakiness-playwright-shard` splits work into the same indivisible units that Playwright assigns to its workers, then balances those units across shards by historical duration. The unit follows your Playwright parallelism configuration:
