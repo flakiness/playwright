@@ -9,14 +9,14 @@ importers:
   .:
     devDependencies:
       '@flakiness/flakiness-report':
-        specifier: ^0.35.0
-        version: 0.35.0(zod@4.4.3)
+        specifier: ^0.36.0
+        version: 0.36.0(zod@4.4.3)
       '@flakiness/playwright':
         specifier: ^1.14.0
         version: 1.14.0
       '@flakiness/sdk':
         specifier: ^3.4.0
-        version: 3.4.0(@flakiness/flakiness-report@0.35.0(zod@4.4.3))
+        version: 3.4.0(@flakiness/flakiness-report@0.36.0(zod@4.4.3))
       '@playwright/test':
         specifier: ^1.60.0
         version: 1.60.0
@@ -198,8 +198,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@flakiness/flakiness-report@0.35.0':
-    resolution: {integrity: sha512-dJS4fS9c69W8Zs8Vvs4pg752WYYGBZkOjyUoDye6QNbmmaq7aYDKIPvlXBr/AIhSyGkHMAWifr7HhQQFQ+CeVA==}
+  '@flakiness/flakiness-report@0.36.0':
+    resolution: {integrity: sha512-Ngawf/P6nvYnhFjI86ipAygkl897dyzRvQYWJ4X8UKScP0kYGcDGdnvdMD9YTd9Ahk7fSE2vnTNQJjiz1WBtDw==}
     peerDependencies:
       zod: ^4.1.12
 
@@ -699,15 +699,15 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@flakiness/flakiness-report@0.35.0(zod@4.4.3)':
+  '@flakiness/flakiness-report@0.36.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
   '@flakiness/playwright@1.14.0': {}
 
-  '@flakiness/sdk@3.4.0(@flakiness/flakiness-report@0.35.0(zod@4.4.3))':
+  '@flakiness/sdk@3.4.0(@flakiness/flakiness-report@0.36.0(zod@4.4.3))':
     dependencies:
-      '@flakiness/flakiness-report': 0.35.0(zod@4.4.3)
+      '@flakiness/flakiness-report': 0.36.0(zod@4.4.3)
       debug: 4.4.3
       open: 10.2.0
       stable-hash: 0.0.6

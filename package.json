@@ -15,7 +15,8 @@
     }
   },
   "bin": {
-    "flakiness-playwright-shard": "./lib/flakiness-playwright-shard.js"
+    "flakiness-playwright-shard": "./lib/flakiness-playwright-shard.js",
+    "flakiness-playwright-timings": "./lib/flakiness-playwright-timings.js"
   },
   "type": "module",
   "description": "A custom Playwright test reporter that generates Flakiness Reports from your Playwright test runs",
@@ -40,7 +41,7 @@
     "node": "^20.17.0 || >=22.9.0"
   },
   "devDependencies": {
-    "@flakiness/flakiness-report": "^0.35.0",
+    "@flakiness/flakiness-report": "^0.36.0",
     "@flakiness/playwright": "^1.14.0",
     "@flakiness/sdk": "^3.4.0",
     "@playwright/test": "^1.60.0",

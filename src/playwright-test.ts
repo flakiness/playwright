@@ -15,7 +15,6 @@ import {
 import { BrowserType } from '@playwright/test';
 import type {
   FullConfig,
-  FullProject,
   FullResult,
   Reporter,
   Suite, TestCase, TestError, TestResult
@@ -23,8 +22,10 @@ import type {
 import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
-import { buildReport, computeFKTestId } from './reportBuilder.js';
+import { buildReport } from './reportBuilder.js';
 import { generateBalancedShard, parseShardSlot, SHARD_HINT_ENV } from './sharding.js';
+import { computeDurationPredictions } from './timings.js';
+import { readReportFile } from './utils.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -213,7 +214,7 @@ export default class FlakinessReporter implements Reporter {
 
     const shardRequest = this._options._mode === 'list' ? parseShardEnv() : undefined;
     if (shardRequest) {
-      const durationsReport = shardRequest.timingsFile ? await readTimingsReport(shardRequest.timingsFile) : await fetchTestDurations(report, {
+      const durationsReport = shardRequest.timingsFile ? await readReportFile(shardRequest.timingsFile, '--timings file') : await fetchTestDurations(report, {
         flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
         flakinessEndpoint: this._options.endpoint,
       });
@@ -301,55 +302,3 @@ function defaultShardTitle(config: FullConfig): string | undefined {
   return slot ? `Shard ${slot.current}/${slot.total}` : undefined;
 }
 
-async function readTimingsReport(aPath: string): Promise<FK.Report> {
-  let text: string;
-  try {
-    text = await fs.promises.readFile(aPath, 'utf-8');
-  } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    throw new Error(`[flakiness.io] cannot read --timings file "${aPath}": ${reason}`);
-  }
-  try {
-    return JSON.parse(text) as FK.Report;
-  } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    throw new Error(`[flakiness.io] cannot parse --timings file "${aPath}" as JSON: ${reason}`);
-  }
-}
-
-function computeDurationPredictions(durationsReport: FK.Report, projectToEnvNames: Map<FullProject, string>, testMappings: Map<string, TestCase[]>) {
-  const durationPredictions = new Map<TestCase, number>();
-  ReportUtils.visitTests(durationsReport, (test, parentSuites) => {
-    // Accumulate test durations per environment: we consider test duration to be a cumulative
-    // of all attempts per environment. For example, if it reliably passes only on the second try, then
-    // its duration is the sum of the both attempts.
-    const durationsPerEnv = new Map<string, number>();
-    for (const attempt of test.attempts) {
-      const envName = durationsReport.environments[attempt.environmentIdx ?? 0]?.name;
-      // Defensive programming: this should never happen.
-      if (!envName)
-        continue;
-      const acc = durationsPerEnv.get(envName) ?? 0;
-      durationsPerEnv.set(envName, acc + (attempt.duration ?? 0));
-    }
-    // No data for the test? Skip it and rely on DEFAULT_DURATION.
-    if (!durationsPerEnv.size)
-      return;
-    const maxDuration = Math.max(...Array.from(durationsPerEnv.values()));
-
-    const fkTestId = computeFKTestId(test, parentSuites);
-    const testCases = testMappings.get(fkTestId) ?? [];
-    for (const testCase of testCases) {
-      // For each test case, find an envName it is mapped to.
-      const project = testCase.parent.project();
-      const envName = project ? projectToEnvNames.get(project) : undefined;
-      // For each test case, we want to find the best timing approximation.
-      // We either try to find the environment with the same name (these should be unique),
-      // and otherwise use a max duration.
-      const envDuration = envName ? durationsPerEnv.get(envName) : undefined;
-      // We fallback to the max of the test durations across environments.
-      durationPredictions.set(testCase, envDuration ?? maxDuration);
-    }
-  });
-  return durationPredictions;
-}
