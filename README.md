@@ -105,7 +105,7 @@ By default durations are fetched from the Flakiness.io Durations API. These chan
 data gets uploaded to the service, allowing for more precise test duration predictions.
 
 In real-world large test suites, though, tests are not hermetic and do rely on their order and
-specific sharding. So instead of fetching dynamic test duration predicutions from the Flakiness.io,
+specific sharding. So instead of fetching dynamic test duration predictions from the Flakiness.io,
 clients can pass a `--timings=<file>` flag to use previous run test durations as balancing hints:
 
 ```bash
@@ -132,6 +132,17 @@ Then feed the result to the shard command:
 
 ```bash
 npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
+```
+
+### Fetching a timings file from Flakiness.io
+
+By default `flakiness-playwright-shard` fetches the **latest** durations from the Durations API on every run, so as data accumulates the predictions shift and the shard split drifts from run to run. For the large suites that most need sharding — where tests aren't fully hermetic and have been tuned against a *specific* split — that drift breaks things: a test that ran on shard 2 yesterday can land on shard 3 today. `--timings` avoids it by pinning a fixed file (see above), and `fetch` is how you produce that file — a snapshot of the current durations for your environment, taken from Flakiness.io:
+
+```bash
+# prepare step - snapshot the current durations
+npx flakiness-playwright-timings fetch -o timings.json
+# run step - use `--timings` for fixed shard split.
+npx flakiness-playwright-shard --shard=1/3 --timings=timings.json
 ```
 
 ### Sharding granularity

@@ -142,6 +142,33 @@ async function runFlakinessPlaywrightShard(
   });
 }
 
+async function runFlakinessPlaywrightTimings(
+  targetDir: string,
+  extraEnv: Record<string, string> | undefined,
+  args: string[],
+) {
+  const timingsCli = path.join(PROJECT_ROOT, 'lib', 'flakiness-playwright-timings.js');
+  assert(fs.existsSync(timingsCli), `missing flakiness-playwright-timings CLI at ${timingsCli}`);
+  const env = {
+    ...process.env,
+    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
+    ...(extraEnv ?? {}),
+  };
+  delete (env as any)['CI'];
+  return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
+    execFile(process.execPath, [timingsCli, ...args], {
+      cwd: targetDir,
+      env,
+      encoding: 'utf-8',
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60_000,
+    }, (error, stdout, stderr) => {
+      const exitCode = error ? (typeof (error as any).code === 'number' ? (error as any).code : 1) : 0;
+      resolve({ stdout, stderr, exitCode });
+    });
+  });
+}
+
 export async function generateFlakinessReport(
     testInfo: TestInfo,
     files: Record<string, string>,
@@ -213,6 +240,32 @@ export async function runBalancedShardRaw(
   ): Promise<{ stdout: string, stderr: string, exitCode: number | null }> {
   const { targetDir } = await initializeDirectoryWithTests(testInfo, files, options, playwrightConfig);
   return await runFlakinessPlaywrightShard(targetDir, extraEnv, shard, cliArgs);
+}
+
+// Runs `flakiness-playwright-timings fetch` against a fixture. By default it
+// authenticates against a fake Durations server (so the reporter's --list run
+// fetches synthesized durations); pass `auth: false` to omit credentials and
+// exercise the failure path. Returns the process result plus the parsed
+// timings report (undefined if none was written).
+export async function fetchTimings(
+    testInfo: TestInfo,
+    files: Record<string, string>,
+    playwrightConfig?: PlaywrightTestConfig,
+    opts?: { auth?: boolean, cliArgs?: string[] },
+  ): Promise<{ exitCode: number | null, stdout: string, stderr: string, timings?: FlakinessReport.Report }> {
+  using durationsServer = await startFakeDurationsServer();
+  const { targetDir } = await initializeDirectoryWithTests(testInfo, files, {}, playwrightConfig);
+  const timingsFile = path.join(targetDir, 'timings.json');
+  const args = ['fetch', '-o', timingsFile];
+  if (opts?.auth !== false)
+    args.push('--token', 'fake-token', '--endpoint', durationsServer.endpoint);
+  args.push(...(opts?.cliArgs ?? []));
+
+  const result = await runFlakinessPlaywrightTimings(targetDir, undefined, args);
+  const timings = fs.existsSync(timingsFile)
+    ? JSON.parse(fs.readFileSync(timingsFile, 'utf-8')) as FlakinessReport.Report
+    : undefined;
+  return { ...result, timings };
 }
 
 function reportTotalWeight(report: FlakinessReport.Report): number {

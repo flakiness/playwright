@@ -24,7 +24,7 @@ import path from 'node:path';
 import * as nodeUtil from 'node:util';
 import { buildReport } from './reportBuilder.js';
 import { generateBalancedShard, parseShardSlot, SHARD_HINT_ENV } from './sharding.js';
-import { computeDurationPredictions } from './timings.js';
+import { computeDurationPredictions, distillTimings } from './timings.js';
 import { readReportFile } from './utils.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
@@ -210,6 +210,20 @@ export default class FlakinessReporter implements Reporter {
       } catch (e) {
         err(`Failed to resolve browser version: ${e}`);
       }
+    }
+
+    // `flakiness-playwright-timings fetch` runs us via `--list` with this env var
+    // set: fetch historical durations for the listed tests, distill them into a
+    // lean timings report, and write it to the given path.
+    const timingsOutput = this._options._mode === 'list' ? process.env.FLAKINESS_TIMINGS_OUTPUT : undefined;
+    if (timingsOutput) {
+      const durationsReport = await fetchTestDurations(report, {
+        flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
+        flakinessEndpoint: this._options.endpoint,
+      });
+      const timings = distillTimings([durationsReport]);
+      await fs.promises.writeFile(timingsOutput, JSON.stringify(timings, null, 2));
+      return;
     }
 
     const shardRequest = this._options._mode === 'list' ? parseShardEnv() : undefined;
