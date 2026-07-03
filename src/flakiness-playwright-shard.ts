@@ -32,6 +32,7 @@ async function main() {
       { name: 'timings', aliases: ['--timings'] },
     ],
     bools: [
+      { name: 'list', aliases: ['--list'] },
       { name: 'help', aliases: ['-h', '--help'] },
     ],
   });
@@ -66,6 +67,8 @@ async function main() {
     const runArgs = [`--test-list=${shardFile}`, ...passthrough];
     if (!passthrough.some(arg => isFlag(arg, '--pass-with-no-tests')))
       runArgs.unshift('--pass-with-no-tests');
+    if (flags.has('list'))
+      runArgs.unshift('--list');
 
     return runPlaywright(runArgs, {
       ...process.env,
