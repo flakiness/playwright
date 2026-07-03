@@ -46,3 +46,20 @@ test('fails loudly when durations cannot be produced', async ({}, testInfo) => {
   expect(exitCode).not.toBe(0);
   expect(timings).toBeUndefined();
 });
+
+test('does not pass off a pre-existing output file as this run\'s result', async ({}, testInfo) => {
+  const files = {
+    'a.spec.ts': `
+      import { test } from '@playwright/test';
+      test('alpha', async () => {});
+    `,
+    // A leftover timings file from a previous run, sitting at the output path.
+    'timings.json': `{ "stale": true }`,
+  };
+  // Same failure mode as above: the reporter errors and writes nothing. The
+  // stale file at the output path must not turn that into a success.
+  const { exitCode, timings } = await fetchTimings(testInfo, files, {}, { auth: false });
+
+  expect(exitCode).not.toBe(0);
+  expect(timings).toEqual({ stale: true });
+});

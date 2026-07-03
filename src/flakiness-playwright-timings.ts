@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
+import os from 'node:os';
 import path from 'node:path';
 import { distillTimings } from './timings.js';
 import { isFlag, parseArgs, readReportFile, runPlaywright } from './utils.js';
@@ -68,23 +69,32 @@ async function runFetch(args: string[]): Promise<number> {
       throw new Error(`"${arg}" is managed by flakiness-playwright-timings and cannot be passed explicitly`);
   }
 
-  // The reporter, in --list mode, fetches historical durations for the listed
-  // tests, distills them, and writes the timings report to this path.
   const outputFile = path.resolve(process.cwd(), values.output ?? 'timings.json');
-  const env: NodeJS.ProcessEnv = { ...process.env, FLAKINESS_TIMINGS_OUTPUT: outputFile };
+  // The reporter, in --list mode, fetches historical durations for the listed
+  // tests, distills them, and writes the timings report. Have it write to a
+  // fresh temporary path first: a pre-existing output file (e.g. from a prior
+  // run) must not masquerade as this run's result if the reporter never wrote.
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'flakiness-playwright-timings-'));
+  const tmpFile = path.join(tmpDir, 'timings.json');
+  const env: NodeJS.ProcessEnv = { ...process.env, FLAKINESS_TIMINGS_OUTPUT: tmpFile };
   if (values.token)
     env.FLAKINESS_ACCESS_TOKEN = values.token;
   if (values.endpoint)
     env.FLAKINESS_ENDPOINT = values.endpoint;
 
-  const listExitCode = runPlaywright(['--list', ...passthrough], env, false);
-  if (listExitCode !== 0) {
-    console.error(`failed to fetch timings: playwright exited with code ${listExitCode}`);
-    return listExitCode;
+  try {
+    const listExitCode = runPlaywright(['--list', ...passthrough], env, false);
+    if (listExitCode !== 0) {
+      console.error(`failed to fetch timings: playwright exited with code ${listExitCode}`);
+      return listExitCode;
+    }
+    if (!fs.existsSync(tmpFile))
+      throw new Error('failed to fetch timings: no timings report was written. Is @flakiness/playwright configured as a reporter?');
+    await fs.promises.copyFile(tmpFile, outputFile);
+    return 0;
+  } finally {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
   }
-  if (!fs.existsSync(outputFile))
-    throw new Error('failed to fetch timings: no timings report was written. Is @flakiness/playwright configured as a reporter?');
-  return 0;
 }
 
 async function main(): Promise<number> {
