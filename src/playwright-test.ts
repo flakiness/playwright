@@ -223,6 +223,9 @@ export default class FlakinessReporter implements Reporter {
       });
       const timings = distillTimings([durationsReport]);
       await fs.promises.writeFile(timingsOutput, JSON.stringify(timings, null, 2));
+      // Workaround https://github.com/nodejs/node/issues/56645
+      if (process.platform === 'win32')
+        await new Promise(x => setTimeout(x, 100));
       return;
     }
 
