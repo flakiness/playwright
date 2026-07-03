@@ -256,12 +256,12 @@ export async function fetchTimings(
   using durationsServer = await startFakeDurationsServer();
   const { targetDir } = await initializeDirectoryWithTests(testInfo, files, {}, playwrightConfig);
   const timingsFile = path.join(targetDir, 'timings.json');
-  const args = ['fetch', '-o', timingsFile];
-  if (opts?.auth !== false)
-    args.push('--token', 'fake-token', '--endpoint', durationsServer.endpoint);
-  args.push(...(opts?.cliArgs ?? []));
+  const args = ['fetch', '-o', timingsFile, ...(opts?.cliArgs ?? [])];
+  const extraEnv = opts?.auth !== false
+    ? { FLAKINESS_ACCESS_TOKEN: 'fake-token', FLAKINESS_ENDPOINT: durationsServer.endpoint }
+    : undefined;
 
-  const result = await runFlakinessPlaywrightTimings(targetDir, undefined, args);
+  const result = await runFlakinessPlaywrightTimings(targetDir, extraEnv, args);
   const timings = fs.existsSync(timingsFile)
     ? JSON.parse(fs.readFileSync(timingsFile, 'utf-8')) as FlakinessReport.Report
     : undefined;

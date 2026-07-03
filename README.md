@@ -140,7 +140,7 @@ npx flakiness-playwright-timings fetch -o timings.json
 npx flakiness-playwright-shard --shard=1/3 --timings=timings.json
 ```
 
-Fetching requires the reporter to be configured with your `flakinessProject`, and authenticates the same way uploads do (`FLAKINESS_ACCESS_TOKEN`, GitHub OIDC, or the `--token` flag).
+Fetching requires the reporter to be configured with your `flakinessProject`, and authenticates the same way uploads do (the `token` reporter option, `FLAKINESS_ACCESS_TOKEN`, or GitHub OIDC).
 
 ### Advanced: auto-fetching durations on every run
 

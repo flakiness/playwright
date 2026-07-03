@@ -8,7 +8,7 @@ import { isFlag, parseArgs, readReportFile, runPlaywright } from './utils.js';
 
 const usage = `Usage:
   flakiness-playwright-timings build <report.json...> [-o <output>]
-  flakiness-playwright-timings fetch [playwright test args...] [-o <output>] [--token <token>] [--endpoint <url>]
+  flakiness-playwright-timings fetch [playwright test args...] [-o <output>]
 
 Produces a lean timings report (for "flakiness-playwright-shard --timings=<output>")
 from local Flakiness reports, or by fetching historical durations from Flakiness.io.
@@ -21,10 +21,6 @@ Subcommands:
 
 Options:
   -o, --output <file>   Write the timings report to <file> (default: timings.json).
-  --token <token>       Flakiness.io access token (fetch only; defaults to
-                        FLAKINESS_ACCESS_TOKEN, then GitHub OIDC, then anonymous).
-  --endpoint <url>      Flakiness.io endpoint (fetch only; defaults to
-                        FLAKINESS_ENDPOINT or https://flakiness.io).
   -h, --help            Show this help.`;
 
 async function runBuild(args: string[]): Promise<number> {
@@ -53,8 +49,6 @@ async function runFetch(args: string[]): Promise<number> {
   const { values, flags, passthrough } = parseArgs(args, {
     values: [
       { name: 'output', aliases: ['-o', '--output'] },
-      { name: 'token', aliases: ['--token'] },
-      { name: 'endpoint', aliases: ['--endpoint'] },
     ],
     bools: [
       { name: 'help', aliases: ['-h', '--help'] },
@@ -77,10 +71,6 @@ async function runFetch(args: string[]): Promise<number> {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'flakiness-playwright-timings-'));
   const tmpFile = path.join(tmpDir, 'timings.json');
   const env: NodeJS.ProcessEnv = { ...process.env, FLAKINESS_TIMINGS_OUTPUT: tmpFile };
-  if (values.token)
-    env.FLAKINESS_ACCESS_TOKEN = values.token;
-  if (values.endpoint)
-    env.FLAKINESS_ENDPOINT = values.endpoint;
 
   try {
     const listExitCode = runPlaywright(['--list', ...passthrough], env, false);
