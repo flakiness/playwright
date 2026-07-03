@@ -16,6 +16,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [Commit the timings file](#commit-the-timings-file)
   - [Advanced: auto-fetching durations on every run](#advanced-auto-fetching-durations-on-every-run)
   - [Sharding granularity](#sharding-granularity)
+  - [Debugging test failures](#debugging-test-failures)
 - [Uploading Reports](#uploading-reports)
 - [Viewing Reports](#viewing-reports)
 - [Features](#features)
@@ -192,7 +193,33 @@ export default defineConfig({
 
 Without it, balancing is per-file — a single large spec file is one unit and lands entirely on one shard. You can also opt in selectively by wrapping the tests you want spread across shards in `test.describe.parallel()`.
 
-## Uploading Reports
+### Debugging test failures
+
+Balanced sharding regroups tests: tests that used to share a shard may now run apart, and tests that never met before may now run together. If a shard starts failing after re-balancing — while the same tests pass under Playwright's native `--shard` — the usual culprit is a hidden dependency between tests: one test relies on state (a file, a database row, a signed-in session) that another test happens to set up or clobber.
+
+Here is how to pinpoint the interfering tests. Say shard `4/8` is the one failing:
+
+1. **Pin the timings.** Debugging needs a shard split that doesn't move underneath you, so use a fixed timings file — either [build one from reports](#building-a-timings-file-from-multiple-reports) or [fetch one from Flakiness.io](#fetching-a-timings-file-from-flakinessio). Skip this step if you already run with a committed `timings.json`.
+
+2. **Dump the shard's test list.** The `--list` flag makes the shard command print the balanced shard's tests instead of running them:
+
+   ```bash
+   npx flakiness-playwright-shard --shard=4/8 --timings=timings.json --list > tests.txt
+   ```
+
+3. **Reproduce with plain Playwright.** Feed the list back via Playwright's `--test-list`:
+
+   ```bash
+   npx playwright test --test-list=tests.txt --workers=1
+   ```
+
+   A single worker makes the run deterministic — every attempt executes the same tests in the same order. If the failure reproduces only with multiple workers, the interference is *between* workers (tests in different workers competing for a shared resource) rather than a within-worker ordering problem, but the minimization below works the same way.
+
+4. **Minimize the list.** Now shrink `tests.txt` until only the interfering tests remain: comment out a chunk of lines (the `--test-list` format treats lines starting with `#` as comments), re-run, and keep whichever half still fails. Repeat. You'll typically converge on a pair — one test that pollutes shared state, and one that trips over it.
+
+5. **Fix the dependency.** Make both tests self-contained: set up the state each test needs in the test itself (or a fixture), and clean up whatever it changes. Once the tests are hermetic, they'll pass regardless of which shard — or neighbors — they get.
+
+
 
 Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authentication can be done in two ways:
 
