@@ -10,6 +10,11 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Balanced Sharding](#balanced-sharding)
+  - [Using the last run as duration hints](#using-the-last-run-as-duration-hints)
+  - [Building a timings file from multiple reports](#building-a-timings-file-from-multiple-reports)
+  - [Fetching a timings file from Flakiness.io](#fetching-a-timings-file-from-flakinessio)
+  - [Advanced: auto-fetching durations on every run](#advanced-auto-fetching-durations-on-every-run)
+  - [Sharding granularity](#sharding-granularity)
 - [Uploading Reports](#uploading-reports)
 - [Viewing Reports](#viewing-reports)
 - [Features](#features)
@@ -70,53 +75,43 @@ npx flakiness show ./flakiness-report
 
 ## Balanced Sharding
 
-Balanced sharding uses historical test durations from Flakiness.io to generate Playwright test lists with more even shard runtimes.
+Playwright's native `--shard` splits work blindly: it divides tests evenly by *count*, knowing nothing about how long each one takes. A shard that happens to collect the slow tests becomes the long pole of the whole CI run, while the other shards sit finished and idle.
 
-First, make sure the reporter is configured with your Flakiness.io project:
-
-```typescript
-import { defineConfig } from '@playwright/test';
-
-export default defineConfig({
-  reporter: [
-    ['@flakiness/playwright', {
-      flakinessProject: 'my-org/my-project',
-    }]
-  ],
-});
-```
-
-Then run each shard with `flakiness-playwright-shard` instead of `playwright test`:
+`flakiness-playwright-shard` shards intelligently instead. Given **test duration hints**, it packs tests into shards by expected runtime, so every shard finishes at roughly the same time. Use it in place of `playwright test`:
 
 ```bash
-npx flakiness-playwright-shard --shard=1/2
-npx flakiness-playwright-shard --shard=2/2
+npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
+npx flakiness-playwright-shard --shard=2/2 --timings=timings.json
 ```
 
 Any additional arguments are passed through to `playwright test`:
 
 ```bash
-npx flakiness-playwright-shard --shard=1/2 --project=chromium tests/e2e
+npx flakiness-playwright-shard --shard=1/2 --timings=timings.json --project=chromium tests/e2e
 ```
 
-### Sharding from a local timings file
+The only prerequisite is that `@flakiness/playwright` is configured as a reporter (see [Quick Start](#quick-start)) — the shard command relies on it to compute the balanced test list.
 
-By default durations are fetched from the Flakiness.io Durations API. These change as more and more
-data gets uploaded to the service, allowing for more precise test duration predictions.
+The rest of this section is about where the duration hints come from. There are three sources, from simplest to most automated.
 
-In real-world large test suites, though, tests are not hermetic and do rely on their order and
-specific sharding. So instead of fetching dynamic test duration predicutions from the Flakiness.io,
-clients can pass a `--timings=<file>` flag to use previous run test durations as balancing hints:
+### Using the last run as duration hints
+
+The simplest source of duration hints is the report from a previous run — pass it directly via `--timings`:
 
 ```bash
 npx flakiness-playwright-shard --shard=1/2 --timings=./flakiness-report/report.json
 ```
 
-Tests missing from the file fall back to a default weight, so a stale or partial timings file still produces a valid (if less balanced) split.
+This works out of the box: as long as the previous run covered your tests, its recorded durations drive the balancing. Tests missing from the file simply fall back to a default weight, so a stale or partial report still produces a valid (if less balanced) split.
 
-### Building a timings file from past runs
+It has two drawbacks, though:
 
-A raw `report.json` works as a `--timings` input, but it carries everything a full report does (steps, attachments, stdio) and only represents a **single** run. To combine several past runs into one compact, robust hint file, use the `flakiness-playwright-timings` binary:
+- A full Flakiness report carries far more than durations — steps, errors, annotations, stdio — so it's a bulky file to cart around as a balancing hint.
+- It represents a **single** run. One run's durations are noisy, and a sharded run only covers that shard's tests.
+
+### Building a timings file from multiple reports
+
+The `flakiness-playwright-timings build` command solves both drawbacks: it distills one or more Flakiness reports — from multiple runs, multiple shards, wherever — into a single compact `timings.json` that contains only test durations:
 
 ```bash
 npx flakiness-playwright-timings build report-1.json report-2.json report-3.json -o timings.json
@@ -133,6 +128,32 @@ Then feed the result to the shard command:
 ```bash
 npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
 ```
+
+### Fetching a timings file from Flakiness.io
+
+If your reports are uploaded to Flakiness.io, you don't need to collect report files yourself — the service already has your historic durations, aggregated across many runs. The `flakiness-playwright-timings fetch` command snapshots them into a timings file: it runs `playwright test --list` to discover the current test set, fetches its historical durations from the Flakiness.io Durations API, and distills them into a timings report:
+
+```bash
+# prepare step — snapshot the current durations
+npx flakiness-playwright-timings fetch -o timings.json
+# run step — a fixed shard split, balanced by real history
+npx flakiness-playwright-shard --shard=1/3 --timings=timings.json
+```
+
+Fetching requires the reporter to be configured with your `flakinessProject`, and authenticates the same way uploads do (the `token` reporter option, `FLAKINESS_ACCESS_TOKEN`, or GitHub OIDC).
+
+### Advanced: auto-fetching durations on every run
+
+When run **without** `--timings`, `flakiness-playwright-shard` fetches the latest durations from the Flakiness.io Durations API on every invocation:
+
+```bash
+npx flakiness-playwright-shard --shard=1/2
+npx flakiness-playwright-shard --shard=2/2
+```
+
+This is the most hands-off mode — no timings file to produce or pass around, and predictions keep improving as more data accumulates on the service.
+
+**This mode is advanced, and requires a fully hermetic test suite.** Because the historic durations shift as new data piles up, the shard split can change from one run to the next: a test that ran on shard 2 yesterday may land on shard 3 today. Tests that aren't hermetic — that depend on execution order, or on which tests they share a shard with — will break under a drifting split. If your suite isn't there yet, pin the split with a `--timings` file produced by `build` or `fetch` (see above).
 
 ### Sharding granularity
 
