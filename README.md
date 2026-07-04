@@ -219,7 +219,7 @@ Here is how to pinpoint the interfering tests. Say shard `4/8` is the one failin
 
 5. **Fix the dependency.** Make both tests self-contained: set up the state each test needs in the test itself (or a fixture), and clean up whatever it changes. Once the tests are hermetic, they'll pass regardless of which shard — or neighbors — they get.
 
-
+## Uploading Reports
 
 Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authentication can be done in two ways:
 
