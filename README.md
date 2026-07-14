@@ -14,7 +14,6 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [Building a timings file from multiple reports](#building-a-timings-file-from-multiple-reports)
   - [Fetching a timings file from Flakiness.io](#fetching-a-timings-file-from-flakinessio)
   - [Commit the timings file](#commit-the-timings-file)
-  - [Advanced: auto-fetching durations on every run](#advanced-auto-fetching-durations-on-every-run)
   - [Sharding granularity](#sharding-granularity)
   - [Debugging test failures](#debugging-test-failures)
 - [Uploading Reports](#uploading-reports)
@@ -32,12 +31,13 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [`open?: 'always' | 'never' | 'on-failure'`](#open-always--never--on-failure)
   - [`collectBrowserVersions?: boolean`](#collectbrowserversions-boolean)
   - [`disableUpload?: boolean`](#disableupload-boolean)
+  - [`shardBalancing?: { timingsFile: string }`](#shardbalancing--timingsfile-string-)
 - [Environment Variables](#environment-variables)
 - [Example Configuration](#example-configuration)
 
 ## Requirements
 
-- Playwright 1.57.0 or higher
+- Playwright 1.57.0 or higher (1.62.0 or higher for [balanced sharding](#balanced-sharding))
 - Node.js project with a git repository (for commit information)
 - Valid Flakiness.io access token (for uploads)
 
@@ -79,29 +79,35 @@ npx flakiness show ./flakiness-report
 
 Playwright's native `--shard` splits work by *count*, knowing nothing about how long each one takes. A shard that happens to collect the slow tests becomes the long pole of the whole CI run, while the other shards sit finished and idle.
 
-`flakiness-playwright-shard` uses **test duration hints** to packs tests into shards by expected runtime, so every shard finishes at roughly the same time. Use it in place of `playwright test`:
+The reporter's `shardBalancing` option replaces Playwright's native splitting with one driven by **test duration hints**: tests are packed into shards by expected runtime, so every shard finishes at roughly the same time. Configure it once:
 
-```bash
-npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
-npx flakiness-playwright-shard --shard=2/2 --timings=timings.json
+```typescript
+export default defineConfig({
+  reporter: [
+    ['@flakiness/playwright', {
+      shardBalancing: { timingsFile: 'timings.json' },
+    }]
+  ],
+});
 ```
 
-Any additional arguments are passed through to `playwright test`:
+— and keep using plain `playwright test`; the regular `--shard` argument now produces balanced shards:
 
 ```bash
-npx flakiness-playwright-shard --shard=1/2 --timings=timings.json --project=chromium tests/e2e
+npx playwright test --shard=1/2
+npx playwright test --shard=2/2
 ```
 
-The only prerequisite is that `@flakiness/playwright` is configured as a reporter (see [Quick Start](#quick-start)) — the shard command relies on it to compute the balanced test list.
+All other Playwright arguments work as usual (`--project=chromium tests/e2e ...`), and runs without `--shard` are unaffected. Balanced sharding requires Playwright **1.62 or higher**; on older versions the reporter prints a warning and Playwright's native sharding applies.
 
-The rest of this section is about where the duration hints come from. There are three sources, from simplest to most automated.
+`shardBalancing` takes a single form — **`{ timingsFile: '<path>' }`** — pointing at a timings file that supplies the duration hints. The rest of this section is about where that file comes from. There are three sources, from simplest to most automated.
 
 ### Using the last run as duration hints
 
-The simplest source of duration hints is the report from a previous run — pass it directly via `--timings`:
+The simplest source of duration hints is the report from a previous run — point `timingsFile` directly at it:
 
-```bash
-npx flakiness-playwright-shard --shard=1/2 --timings=./flakiness-report/report.json
+```typescript
+shardBalancing: { timingsFile: './flakiness-report/report.json' }
 ```
 
 This works out of the box: as long as the previous run covered your tests, its recorded durations drive the balancing. Tests missing from the file simply fall back to a default weight, so a stale or partial report still produces a valid (if less balanced) split.
@@ -125,10 +131,10 @@ It accepts one or more report files and writes a distilled timings report (to `t
 - **Sums retries, maxes across runs.** Within a single run, a test's retry attempts are summed (a test that only passes on its third try genuinely costs all three). Across runs, the per-run costs are combined with `max`, provisioning each shard for the slowest observed run rather than an average.
 - **Keeps only what the balancer needs.** Only the absolutely necessary information is stored, keeping the file size small.
 
-Then feed the result to the shard command:
+Then feed the result to the reporter:
 
-```bash
-npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
+```typescript
+shardBalancing: { timingsFile: 'timings.json' }
 ```
 
 ### Fetching a timings file from Flakiness.io
@@ -139,18 +145,14 @@ If your reports are uploaded to Flakiness.io, you don't need to collect report f
 # prepare step — snapshot the current durations
 npx flakiness-playwright-timings fetch -o timings.json
 # run step — a fixed shard split, balanced by real history
-npx flakiness-playwright-shard --shard=1/3 --timings=timings.json
+npx playwright test --shard=1/3
 ```
 
 Fetching requires the reporter to be configured with your `flakinessProject`, and authenticates the same way uploads do (the `token` reporter option, `FLAKINESS_ACCESS_TOKEN`, or GitHub OIDC).
 
 ### Commit the timings file
 
-However you produce `timings.json` — `build` or `fetch` — commit it to your repository and point CI at the committed file:
-
-```bash
-npx flakiness-playwright-shard --shard=1/2 --timings=timings.json
-```
+However you produce `timings.json` — `build` or `fetch` — commit it to your repository and point `shardBalancing.timingsFile` at the committed file.
 
 A committed timings file has a few nice properties:
 
@@ -160,22 +162,9 @@ A committed timings file has a few nice properties:
 
 The file tolerates going stale: new tests fall back to a default weight, and entries for deleted tests are ignored. Refresh it every once in a while — for example, with a scheduled CI job that runs `flakiness-playwright-timings fetch` and opens a pull request with the result.
 
-### Advanced: auto-fetching durations on every run
-
-When run **without** `--timings`, `flakiness-playwright-shard` fetches the latest durations from the Flakiness.io Durations API on every invocation:
-
-```bash
-npx flakiness-playwright-shard --shard=1/2
-npx flakiness-playwright-shard --shard=2/2
-```
-
-This is the most hands-off mode — no timings file to produce or pass around, and predictions keep improving as more data accumulates on the service.
-
-**This mode is advanced, and requires a fully hermetic test suite.** Because the historic durations shift as new data piles up, the shard split can change from one run to the next: a test that ran on shard 2 yesterday may land on shard 3 today. Tests that aren't hermetic — that depend on execution order, or on which tests they share a shard with — will break under a drifting split. If your suite isn't there yet, pin the split with a `--timings` file produced by `build` or `fetch` (see above).
-
 ### Sharding granularity
 
-`flakiness-playwright-shard` splits work into the same indivisible units that Playwright assigns to its workers, then balances those units across shards by historical duration. The unit follows your Playwright parallelism configuration:
+Balanced sharding splits work into the same indivisible units that Playwright assigns to its workers, then balances those units across shards by historical duration. The unit follows your Playwright parallelism configuration:
 
 - **Default** — a whole spec **file** is one unit. Playwright runs a file's tests in order on a single worker, so a file is never split across shards.
 - **`fullyParallel: true`** — every **test** is its own unit, giving the finest-grained, most even balancing.
@@ -199,15 +188,15 @@ Balanced sharding regroups tests: tests that used to share a shard may now run a
 
 Here is how to pinpoint the interfering tests. Say shard `4/8` is the one failing:
 
-1. **Pin the timings.** Debugging needs a shard split that doesn't move underneath you, so use a fixed timings file — either [build one from reports](#building-a-timings-file-from-multiple-reports) or [fetch one from Flakiness.io](#fetching-a-timings-file-from-flakinessio). Skip this step if you already run with a committed `timings.json`.
+1. **Pin the timings.** Debugging needs a shard split that doesn't move underneath you, so use a fixed timings file — either [build one from reports](#building-a-timings-file-from-multiple-reports) or [fetch one from Flakiness.io](#fetching-a-timings-file-from-flakinessio) — and point `shardBalancing.timingsFile` at it. Skip this step if you already run with a committed `timings.json`.
 
-2. **Dump the shard's test list.** The `--list` flag makes the shard command print the balanced shard's tests instead of running them:
+2. **Dump the shard's test list.** Playwright's `--list` flag prints the balanced shard's tests instead of running them; keep the test lines:
 
    ```bash
-   npx flakiness-playwright-shard --shard=4/8 --timings=timings.json --list > tests.txt
+   npx playwright test --shard=4/8 --list | grep '›' > tests.txt
    ```
 
-3. **Reproduce with plain Playwright.** Feed the list back via Playwright's `--test-list`:
+3. **Reproduce with plain Playwright.** Feed the list back via Playwright's `--test-list` (without `--shard`, so balancing stays out of the way):
 
    ```bash
    npx playwright test --test-list=tests.txt --workers=1
@@ -380,6 +369,16 @@ reporter: [
 ]
 ```
 
+### `shardBalancing?: { timingsFile: string }`
+
+Enables [balanced sharding](#balanced-sharding) for runs with Playwright's `--shard=N/M` argument: instead of Playwright's count-based native split, tests are packed into shards by expected runtime. `{ timingsFile: '<path>' }` reads duration hints from a timings file — a distilled report from `flakiness-playwright-timings`, or any previous run's `report.json`. Requires Playwright 1.62+. Runs without `--shard` are unaffected.
+
+```typescript
+reporter: [
+  ['@flakiness/playwright', { shardBalancing: { timingsFile: 'timings.json' } }]
+]
+```
+
 ## Environment Variables
 
 The reporter respects the following environment variables:
@@ -410,6 +409,7 @@ export default defineConfig({
       open: 'on-failure',
       collectBrowserVersions: false,
       disableUpload: false,
+      shardBalancing: { timingsFile: 'timings.json' },
     }]
   ],
   // ... rest of your config

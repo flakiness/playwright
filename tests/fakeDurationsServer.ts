@@ -99,6 +99,35 @@ function jsonResponse(response: http.ServerResponse, value: unknown) {
   response.end(JSON.stringify(value));
 }
 
+// Rewrites the attempts of a real, executed report with title-encoded
+// durations, keeping each attempt in the environment it actually ran in.
+// Unlike `reportWithDurations` below (which invents an attempt in every
+// environment, mirroring a Durations API response for an un-executed corpus),
+// this models a genuine previous run — which is what prices setup/teardown
+// projects during balanced sharding.
+export function reportWithExecutedDurations(report: FlakinessReport.Report): FlakinessReport.Report {
+  const result = JSON.parse(JSON.stringify(report)) as FlakinessReport.Report;
+  ReportUtils.visitTests(result, test => {
+    const attempts: FlakinessReport.RunAttempt[] = [];
+    for (const attempt of test.attempts) {
+      const envName = result.environments[attempt.environmentIdx ?? 0]?.name;
+      if (envName === undefined)
+        continue;
+      const duration = durationFromWeightInTitle(test.title, envName);
+      if (duration === undefined)
+        continue;
+      attempts.push({
+        environmentIdx: attempt.environmentIdx,
+        status: 'passed' as FlakinessReport.TestStatus,
+        startTimestamp: 0 as FlakinessReport.UnixTimestampMS,
+        duration: duration as FlakinessReport.DurationMS,
+      });
+    }
+    test.attempts = attempts;
+  });
+  return result;
+}
+
 function reportWithDurations(report: FlakinessReport.Report): FlakinessReport.Report {
   const result = JSON.parse(JSON.stringify(report)) as FlakinessReport.Report;
   ReportUtils.visitTests(result, test => {

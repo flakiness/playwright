@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { reportTestCount, reportTestTitles, runBalancedShards } from './utils.js';
+import { reportTestCount, reportTestTitles, runBalancedShardRaw, runBalancedShards } from './utils.js';
 
 test('should generate perfect shards', async ({}, testInfo) => {
   const shards = await runBalancedShards(testInfo, {
@@ -57,7 +57,7 @@ test('should shard tests without historical durations', async ({}, testInfo) => 
   expect(shards.map(shard => reportTestCount(shard.report)).sort()).toEqual([2, 2]);
 });
 
-test('should keep repeatEach instances of one test in one shard', async ({}, testInfo) => {
+test('should shard repeatEach instances across shards', async ({}, testInfo) => {
   const shards = await runBalancedShards(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
@@ -68,8 +68,8 @@ test('should keep repeatEach instances of one test in one shard', async ({}, tes
     repeatEach: 2,
   });
 
-  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([0, 20]);
-  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 2]);
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([10, 10]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 1]);
 });
 
 test('should keep tests from serial suites in one shard', async ({}, testInfo) => {
@@ -190,24 +190,23 @@ test('should keep distinct serial suites with the same title on separate shards'
   expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([20, 20]);
 });
 
-test('should reject reporter override for balanced sharding', async ({}, testInfo) => {
-  await expect(runBalancedShards(testInfo, {
+test('should fail the run before executing any test when balanced sharding fails', async ({}, testInfo) => {
+  // Balanced sharding errors are deliberately fatal: a shard that silently
+  // fell back to Playwright's native sharding would disagree with its
+  // siblings on the partition. Point the reporter at a missing timings file
+  // and expect the run to fail before any test executes.
+  const { exitCode, stdout, stderr } = await runBalancedShardRaw(testInfo, {
     'example.spec.ts': `
       import { test } from '@playwright/test';
 
       test('w=10 alpha', async () => {});
     `,
-  }, 2, {}, {}, undefined, ['--reporter=line'])).rejects.toThrow(/disable @flakiness\/playwright/);
-});
-
-test('should reject Playwright shard argument for balanced sharding', async ({}, testInfo) => {
-  await expect(runBalancedShards(testInfo, {
-    'example.spec.ts': `
-      import { test } from '@playwright/test';
-
-      test('w=10 alpha', async () => {});
-    `,
-  }, 2, {}, {}, undefined, ['--', '--shard=1/2'])).rejects.toThrow(/managed by flakiness-playwright-shard/);
+  }, '1/2', {
+    shardBalancing: { timingsFile: 'does-not-exist.json' },
+  }, { fullyParallel: true });
+  expect(exitCode).not.toBe(0);
+  expect(stdout + stderr).toContain('failed to generate balanced shard');
+  expect(stdout + stderr).not.toContain('w=10 alpha');
 });
 
 test('should generate perfect shards with dependent projects', async ({}, testInfo) => {

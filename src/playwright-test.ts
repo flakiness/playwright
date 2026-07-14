@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
 import { buildReport } from './reportBuilder.js';
-import { generateBalancedShard, parseShardSlot, SHARD_HINT_ENV } from './sharding.js';
+import { allocateBalancedShards } from './sharding.js';
 import { computeDurationPredictions, distillTimings } from './timings.js';
 import { readReportFile } from './utils.js';
 
@@ -53,6 +53,13 @@ type StdIOEntry = {
 
 type ReporterMode = 'list' | 'test' | 'merge';
 
+// Balanced sharding reads test duration hints from a timings file and packs
+// tests into shards by expected runtime when the run is sharded with
+// Playwright's `--shard=N/M`. The file is a distilled timings report (see
+// `flakiness-playwright-timings`) or any previous run's report.json.
+// Requires Playwright 1.62+ (the `Reporter.preprocessSuite()` API).
+type ShardBalancing = { timingsFile: string };
+
 export default class FlakinessReporter implements Reporter {
   private _config?: FullConfig;
   private _rootSuite?: Suite;
@@ -69,6 +76,7 @@ export default class FlakinessReporter implements Reporter {
   private _result?: FullResult;
 
   private _telemetryTimer?: NodeJS.Timeout;
+  private _preprocessSuiteCalled = false;
 
   constructor(private _options: {
     flakinessProject?: string,
@@ -79,6 +87,7 @@ export default class FlakinessReporter implements Reporter {
     open?: OpenMode,
     collectBrowserVersions?: boolean,
     disableUpload?: boolean,
+    shardBalancing?: ShardBalancing,
     // Injected by Playwright when constructing built-in reporters; 'list' for `--list` runs.
     _mode?: ReporterMode,
   } = {}) {
@@ -99,9 +108,66 @@ export default class FlakinessReporter implements Reporter {
     return false;
   }
 
+  // Balanced sharding. Playwright calls this hook (1.62+) before `onBegin`
+  // with the full un-sharded corpus; we exclude every test that does not
+  // belong to shard `config.shard.current` and disable Playwright's native
+  // sharding by returning `implementsSharding: true`.
+  //
+  // NOTE: unlike report generation, errors here are deliberately fatal.
+  // Every shard must balance against identical duration hints; if one shard
+  // silently fell back to Playwright's native sharding, the shards would
+  // disagree on the partition and some tests would run twice while others
+  // never run. Playwright surfaces the thrown error and fails the run before
+  // any test executes.
+  async preprocessSuite(config: FullConfig, suite: Suite): Promise<{ implementsSharding?: boolean } | void> {
+    this._preprocessSuiteCalled = true;
+    const balancing = this._options.shardBalancing;
+    if (!balancing || !config.shard)
+      return;
+    try {
+      const worktreeResult = GitWorktree.initialize(config.rootDir);
+      if (!worktreeResult.ok)
+        throw new Error(`failed to fetch commit info - is this a git repo? (${worktreeResult.error})`);
+      const { commitId, worktree } = worktreeResult;
+
+      // Build a report describing the current corpus: it provides the test
+      // mappings that tie historic durations back to live TestCase objects.
+      const { testMappings, projectToEnvNames } = await buildReport({
+        commitId,
+        worktree,
+        config,
+        rootSuite: suite,
+        duration: 0 as FK.DurationMS,
+        startTimestamp: Date.now() as FK.UnixTimestampMS,
+        flakinessProject: this._options.flakinessProject,
+        title: this._options.title ?? process.env.FLAKINESS_TITLE ?? defaultShardTitle(config),
+      });
+
+      const durationsReport = await readReportFile(balancing.timingsFile, 'shardBalancing.timingsFile');
+      const durationPredictions = computeDurationPredictions(durationsReport, projectToEnvNames, testMappings);
+      const balancedShards = allocateBalancedShards(config, suite, durationPredictions, config.shard.total);
+      // Keep the current shard; splice it out so `balancedShards` holds only the
+      // other shards, and exclude every test that belongs to them.
+      balancedShards.splice(config.shard.current - 1, 1);
+      const testsToExclude = new Set(balancedShards.flat());
+      for (const test of testsToExclude)
+        test.exclude();
+      return { implementsSharding: true };
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      throw new Error(`[flakiness.io] failed to generate balanced shard: ${reason}`);
+    }
+  }
+
   onBegin(config: FullConfig, suite: Suite) {
     this._config = config;
     this._rootSuite = suite;
+    // With `shardBalancing` configured, a sharded run on an older Playwright
+    // never calls `preprocessSuite`, so Playwright's native (unbalanced)
+    // sharding has silently kicked in. Warn: this is consistent across shards
+    // (safe), just not balanced.
+    if (this._options.shardBalancing && config.shard && !this._preprocessSuiteCalled)
+      warn(`shardBalancing requires Playwright 1.62+ (Reporter.preprocessSuite API); using Playwright's native sharding instead`);
   }
 
   onError(error: TestError): void {
@@ -229,21 +295,6 @@ export default class FlakinessReporter implements Reporter {
       return;
     }
 
-    const shardRequest = this._options._mode === 'list' ? parseShardEnv() : undefined;
-    if (shardRequest) {
-      const durationsReport = shardRequest.timingsFile ? await readReportFile(shardRequest.timingsFile, '--timings file') : await fetchTestDurations(report, {
-        flakinessAccessToken: this._options.token ?? process.env.FLAKINESS_ACCESS_TOKEN,
-        flakinessEndpoint: this._options.endpoint,
-      });
-      const durationPredictions = computeDurationPredictions(durationsReport, projectToEnvNames, testMappings);
-      const shardFile = await generateBalancedShard(shardRequest, this._config, this._rootSuite, durationPredictions);
-      await fs.promises.writeFile(shardRequest.testListFile, shardFile);
-      // Workaround https://github.com/nodejs/node/issues/56645
-      if (process.platform === 'win32')
-        await new Promise(x => setTimeout(x, 100));
-      return;
-    }
-
     ReportUtils.collectSources(worktree, report);
     this._cpuUtilization.enrich(report);
     this._ramUtilization.enrich(report);
@@ -290,32 +341,10 @@ function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
 }
 
-type ShardRequest = {
-  current: number,
-  total: number,
-  testListFile: string,
-  timingsFile?: string,
-};
-
-function parseShardEnv(): ShardRequest | undefined {
-  const slot = parseShardSlot(process.env.FLAKINESS_SHARD);
-  const fileValue = process.env.FLAKINESS_SHARD_FILE;
-  if (!slot || !fileValue)
-    return undefined;
-  return {
-    current: slot.current,
-    total: slot.total,
-    testListFile: fileValue,
-    timingsFile: process.env.FLAKINESS_TIMINGS_FILE,
-  };
-}
-
-// Default report title when this run is part of a shard. Prefers Playwright's
-// native `config.shard` (plain `--shard=N/M` runs) and falls back to the
-// `FLAKINESS_SHARD_HINT` env var set by `flakiness-playwright-shard`. Returns
-// undefined when the run is not sharded.
+// Default report title when this run is part of a shard (`--shard=N/M`).
+// Returns undefined when the run is not sharded.
 function defaultShardTitle(config: FullConfig): string | undefined {
-  const slot = config.shard ?? parseShardSlot(process.env[SHARD_HINT_ENV]);
+  const slot = config.shard;
   return slot ? `Shard ${slot.current}/${slot.total}` : undefined;
 }
 

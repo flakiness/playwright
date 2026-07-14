@@ -4,3 +4,6 @@ minimumReleaseAgeExclude:
   - '@flakiness/playwright@1.14.0'
   - '@flakiness/sdk@3.4.0'
   - '@flakiness/flakiness-report@0.36.0'
+  - '@playwright/test@1.62.0-alpha-2026-07-15'
+  - playwright-core@1.62.0-alpha-2026-07-15
+  - playwright@1.62.0-alpha-2026-07-15

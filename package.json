@@ -15,7 +15,6 @@
     }
   },
   "bin": {
-    "flakiness-playwright-shard": "./lib/flakiness-playwright-shard.js",
     "flakiness-playwright-timings": "./lib/flakiness-playwright-timings.js"
   },
   "type": "module",
@@ -44,7 +43,7 @@
     "@flakiness/flakiness-report": "^0.36.0",
     "@flakiness/playwright": "^1.14.0",
     "@flakiness/sdk": "^3.4.0",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "1.62.0-alpha-2026-07-15",
     "@types/node": "^25.9.1",
     "esbuild": "^0.28.1",
     "kubik": "^0.24.0",

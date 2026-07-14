@@ -18,8 +18,8 @@ importers:
         specifier: ^3.4.0
         version: 3.4.0(@flakiness/flakiness-report@0.36.0(zod@4.4.3))
       '@playwright/test':
-        specifier: ^1.60.0
-        version: 1.60.0
+        specifier: 1.62.0-alpha-2026-07-15
+        version: 1.62.0-alpha-2026-07-15
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.3
@@ -214,9 +214,9 @@ packages:
     peerDependencies:
       '@flakiness/flakiness-report': '>=0.26.0 <1.0.0'
 
-  '@playwright/test@1.60.0':
-    resolution: {integrity: sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag==}
-    engines: {node: '>=18'}
+  '@playwright/test@1.62.0-alpha-2026-07-15':
+    resolution: {integrity: sha512-P/pqr039/u5pCQA7HWPEL7hRTWB/dpjOSwbFTGCLS9/xt+5LcEpcSD8T9viMDW4YkA8x40OvOEE0xG20yPDPyQ==}
+    engines: {node: '>=20'}
     hasBin: true
 
   '@sec-ant/readable-stream@0.4.1':
@@ -468,14 +468,14 @@ packages:
     resolution: {integrity: sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ==}
     engines: {node: '>=12'}
 
-  playwright-core@1.60.0:
-    resolution: {integrity: sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==}
-    engines: {node: '>=18'}
+  playwright-core@1.62.0-alpha-2026-07-15:
+    resolution: {integrity: sha512-ljFDR3DUBsYT5pCcZUTwFGc++Ch5TL9VRyMEitJJRpY9fUx5Cqfr8ZBO7n+i8JnZIwMSOKk5JxIMmLcQlpgvpA==}
+    engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.60.0:
-    resolution: {integrity: sha512-hheHdokM8cdqCb0lcE3s+zT4t4W+vvjpGxsZlDnikarzx8tSzMebh3UiFtgqwFwnTnjYQcsyMF8ei2mCO/tpeA==}
-    engines: {node: '>=18'}
+  playwright@1.62.0-alpha-2026-07-15:
+    resolution: {integrity: sha512-vTbFVU1BhZ4OjlXSdlOke43oQZey0402jfFkvd7zaA+8jA5IuQa3Gyee/UlEWW9YFQhwqTl7QkDQ3b/JKB4k8w==}
+    engines: {node: '>=20'}
     hasBin: true
 
   pretty-ms@9.3.0:
@@ -716,9 +716,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@playwright/test@1.60.0':
+  '@playwright/test@1.62.0-alpha-2026-07-15':
     dependencies:
-      playwright: 1.60.0
+      playwright: 1.62.0-alpha-2026-07-15
 
   '@sec-ant/readable-stream@0.4.1': {}
 
@@ -969,11 +969,11 @@ snapshots:
 
   path-key@4.0.0: {}
 
-  playwright-core@1.60.0: {}
+  playwright-core@1.62.0-alpha-2026-07-15: {}
 
-  playwright@1.60.0:
+  playwright@1.62.0-alpha-2026-07-15:
     dependencies:
-      playwright-core: 1.60.0
+      playwright-core: 1.62.0-alpha-2026-07-15
     optionalDependencies:
       fsevents: 2.3.2
 
