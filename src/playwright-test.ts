@@ -289,9 +289,7 @@ export default class FlakinessReporter implements Reporter {
       });
       const timings = distillTimings([durationsReport]);
       await fs.promises.writeFile(timingsOutput, JSON.stringify(timings, null, 2));
-      // Workaround https://github.com/nodejs/node/issues/56645
-      if (process.platform === 'win32')
-        await new Promise(x => setTimeout(x, 100));
+      await workaroundNodeWindowsCrash();
       return;
     }
 
@@ -334,7 +332,18 @@ To open last Flakiness report, run:
   ${styleText('cyan', command)}
       `);
     }
+    await workaroundNodeWindowsCrash();
   }
+}
+
+// Workaround https://github.com/nodejs/node/issues/56645.
+// On Windows, exiting right after async I/O — the reort upload, or the report written
+// in `onEnd` — can tear it down before the bytes are flushed, leaving the
+// reader (our test harness, or a `flakiness-playwright-*` wrapper) with a
+// truncated file. Yield briefly so libuv drains first.
+async function workaroundNodeWindowsCrash() {
+  if (process.platform === 'win32')
+    await new Promise(x => setTimeout(x, 100));
 }
 
 function envBool(name: string): boolean {
