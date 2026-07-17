@@ -17,7 +17,7 @@ import type {
   FullConfig,
   FullResult,
   Reporter,
-  Suite, TestCase, TestError, TestResult
+  Suite, TestCase, TestError, TestResult, TestRun
 } from '@playwright/test/reporter';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +57,7 @@ type ReporterMode = 'list' | 'test' | 'merge';
 // tests into shards by expected runtime when the run is sharded with
 // Playwright's `--shard=N/M`. The file is a distilled timings report (see
 // `flakiness-playwright-timings`) or any previous run's report.json.
-// Requires Playwright 1.62+ (the `Reporter.preprocessSuite()` API).
+// Requires Playwright 1.62+ (the `Reporter.preprocess()` API).
 type ShardBalancing = { timingsFile: string };
 
 export default class FlakinessReporter implements Reporter {
@@ -76,7 +76,7 @@ export default class FlakinessReporter implements Reporter {
   private _result?: FullResult;
 
   private _telemetryTimer?: NodeJS.Timeout;
-  private _preprocessSuiteCalled = false;
+  private _preprocessCalled = false;
 
   constructor(private _options: {
     flakinessProject?: string,
@@ -111,7 +111,7 @@ export default class FlakinessReporter implements Reporter {
   // Balanced sharding. Playwright calls this hook (1.62+) before `onBegin`
   // with the full un-sharded corpus; we exclude every test that does not
   // belong to shard `config.shard.current` and disable Playwright's native
-  // sharding by returning `implementsSharding: true`.
+  // sharding via `testRun.skipSharding()`.
   //
   // NOTE: unlike report generation, errors here are deliberately fatal.
   // Every shard must balance against identical duration hints; if one shard
@@ -119,8 +119,8 @@ export default class FlakinessReporter implements Reporter {
   // disagree on the partition and some tests would run twice while others
   // never run. Playwright surfaces the thrown error and fails the run before
   // any test executes.
-  async preprocessSuite(config: FullConfig, suite: Suite): Promise<{ implementsSharding?: boolean } | void> {
-    this._preprocessSuiteCalled = true;
+  async preprocess({ config, suite, testRun }: { config: FullConfig, suite: Suite, testRun: TestRun }): Promise<void> {
+    this._preprocessCalled = true;
     const balancing = this._options.shardBalancing;
     if (!balancing || !config.shard)
       return;
@@ -151,8 +151,8 @@ export default class FlakinessReporter implements Reporter {
       balancedShards.splice(config.shard.current - 1, 1);
       const testsToExclude = new Set(balancedShards.flat());
       for (const test of testsToExclude)
-        test.exclude();
-      return { implementsSharding: true };
+        testRun.exclude(test);
+      testRun.skipSharding();
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       throw new Error(`[flakiness.io] failed to generate balanced shard: ${reason}`);
@@ -163,11 +163,11 @@ export default class FlakinessReporter implements Reporter {
     this._config = config;
     this._rootSuite = suite;
     // With `shardBalancing` configured, a sharded run on an older Playwright
-    // never calls `preprocessSuite`, so Playwright's native (unbalanced)
+    // never calls `preprocess`, so Playwright's native (unbalanced)
     // sharding has silently kicked in. Warn: this is consistent across shards
     // (safe), just not balanced.
-    if (this._options.shardBalancing && config.shard && !this._preprocessSuiteCalled)
-      warn(`shardBalancing requires Playwright 1.62+ (Reporter.preprocessSuite API); using Playwright's native sharding instead`);
+    if (this._options.shardBalancing && config.shard && !this._preprocessCalled)
+      warn(`shardBalancing requires Playwright 1.62+ (Reporter.preprocess API); using Playwright's native sharding instead`);
   }
 
   onError(error: TestError): void {

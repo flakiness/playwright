@@ -5,12 +5,12 @@ Custom Playwright Test reporter that emits Flakiness.io reports. Single class in
 ## Toolchain
 
 - **pnpm** (not npm/yarn). Use `pnpm install`, `pnpm build`, `pnpm test`.
-- Node 22+, Playwright 1.57+ (balanced sharding needs 1.62+ — the `Reporter.preprocessSuite` API).
+- Node 22+, Playwright 1.57+ (balanced sharding needs 1.62+ — the `Reporter.preprocess` API).
 - Build: Kubik + esbuild (`build.mts`) → ESM, `node22` target, `bundle: false`, then `tsc` for `.d.ts`.
 
 ## Invariants — do not break
 
-1. **Never throw from the reporter.** Degrade via `warn()`/`err()` (`[flakiness.io]` prefix) and continue. A reporter that crashes breaks the user's test run. **Sole exception:** balanced-sharding errors in `preprocessSuite` throw on purpose — a shard that silently fell back to Playwright's native sharding would disagree with its sibling shards on the partition, running some tests twice and others never.
+1. **Never throw from the reporter.** Degrade via `warn()`/`err()` (`[flakiness.io]` prefix) and continue. A reporter that crashes breaks the user's test run. **Sole exception:** balanced-sharding errors in `preprocess` throw on purpose — a shard that silently fell back to Playwright's native sharding would disagree with its sibling shards on the partition, running some tests twice and others never.
 2. **Keep it one file.** All reporter logic stays in `src/playwright-test.ts`. Push schema/transport changes upstream to `@flakiness/sdk` instead of growing this repo.
 3. **Each Playwright project → one Flakiness "environment".** `FK_ENV_*` env vars get folded into `userSuppliedData` (prefix stripped, lowercased).
 
