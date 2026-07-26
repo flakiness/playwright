@@ -148,7 +148,7 @@ npx flakiness-playwright-timings fetch -o timings.json
 npx playwright test --shard=1/3
 ```
 
-Fetching requires the reporter to be configured with your `flakinessProject`, and authenticates the same way uploads do (the `token` reporter option, `FLAKINESS_ACCESS_TOKEN`, or GitHub OIDC).
+Fetching requires the reporter to be configured with your `flakinessProject`, and authenticates the same way uploads do (the `token` reporter option, `FLAKINESS_ACCESS_TOKEN`, or CI OIDC on GitHub Actions and GitLab CI/CD).
 
 ### Commit the timings file
 
@@ -210,14 +210,27 @@ Here is how to pinpoint the interfering tests. Say shard `4/8` is the one failin
 
 ## Uploading Reports
 
-Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authentication can be done in two ways:
+Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authentication is resolved in the following order, and the first available method wins:
 
 - **Access token**: Provide a token via the `token` option or the `FLAKINESS_ACCESS_TOKEN` environment variable.
-- **GitHub OIDC**: When running in GitHub Actions, the reporter can authenticate using GitHub's OIDC token — no access token needed. This requires two conditions:
+- **GitHub OIDC**: When running in GitHub Actions with no access token, the reporter can authenticate using GitHub's OIDC token. This requires three conditions:
   1. The `flakinessProject` option must be set to your Flakiness.io project identifier (`org/project`).
   2. The Flakiness.io project must be bound to the GitHub repository that runs the GitHub Actions workflow.
+  3. The workflow must grant the `id-token: write` permission.
+- **GitLab OIDC**: When running in GitLab CI/CD with no access token, the reporter can authenticate using a GitLab ID token. GitHub Actions mints its token at runtime, but GitLab mints ID tokens when the job starts, so the job must declare one named `FLAKINESS_ID_TOKEN` whose audience is your project identifier:
 
-If upload fails, the report is still available locally in the output folder.
+  ```yaml
+  test:
+    id_tokens:
+      FLAKINESS_ID_TOKEN:
+        aud: my-org/my-project   # must match the `flakinessProject` option
+    script:
+      - npx playwright test
+  ```
+
+  The `aud` claim expands CI/CD variables (GitLab 16.1+), so a shared pipeline template can use `aud: $FLAKINESS_PROJECT`. As with GitHub, the `flakinessProject` option must be set, and the Flakiness.io project must be bound to the GitLab project running the pipeline.
+
+If no method is available the upload is skipped, and if an upload fails the report is still available locally in the output folder. Either way the test run is unaffected.
 
 ## Viewing Reports
 
@@ -281,7 +294,7 @@ The reporter accepts the following options:
 
 ### `flakinessProject?: string`
 
-The Flakiness.io project identifier in `org/project` format. Used for GitHub OIDC authentication — when set, and the Flakiness.io project is bound to the GitHub repository running the workflow, the reporter authenticates uploads via GitHub Actions OIDC token with no access token required.
+The Flakiness.io project identifier in `org/project` format. Required for CI OIDC authentication. When set, and when the Flakiness.io project is bound to the repository running the pipeline, the reporter authenticates uploads via a GitHub Actions or GitLab CI/CD OIDC token with no access token required. See [Uploading Reports](#uploading-reports) for the per-provider requirements.
 
 ```typescript
 reporter: [
@@ -388,6 +401,7 @@ The reporter respects the following environment variables:
 - **`FLAKINESS_OUTPUT_DIR`**: Output directory for reports (equivalent to `outputFolder` option)
 - **`FLAKINESS_TITLE`**: Report title (equivalent to `title` option)
 - **`FLAKINESS_DISABLE_UPLOAD`**: When set, disables report upload (equivalent to `disableUpload` option)
+- **`FLAKINESS_ID_TOKEN`**: GitLab CI/CD ID token used for OIDC authentication. Set by GitLab for jobs that declare it under `id_tokens:` (see [Uploading Reports](#uploading-reports))
 
 
 
