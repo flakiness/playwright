@@ -18,8 +18,8 @@ importers:
         specifier: ^3.4.0
         version: 3.4.0(@flakiness/flakiness-report@0.36.0(zod@4.4.3))
       '@playwright/test':
-        specifier: 1.62.0-alpha-2026-07-16
-        version: 1.62.0-alpha-2026-07-16
+        specifier: 1.62.0
+        version: 1.62.0
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.3
@@ -214,8 +214,8 @@ packages:
     peerDependencies:
       '@flakiness/flakiness-report': '>=0.26.0 <1.0.0'
 
-  '@playwright/test@1.62.0-alpha-2026-07-16':
-    resolution: {integrity: sha512-9uJymq7RMqaGjCCrn+Gce8fDmMTBitrTRQoIT2tMg1faoAU0C7TH1mkiiyb0+fPLHnvr6IaF1eoS1kCKN2UYng==}
+  '@playwright/test@1.62.0':
+    resolution: {integrity: sha512-9zOJ6ZQRAena31MpOH9VSzIz8Ou3YJ/wtY/eQm5T2uhfhG7/U3COrMS8xOtUrZrp9OgdmzEnIYODye3nY1VqzA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -468,13 +468,13 @@ packages:
     resolution: {integrity: sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ==}
     engines: {node: '>=12'}
 
-  playwright-core@1.62.0-alpha-2026-07-16:
-    resolution: {integrity: sha512-9BARmxWPr7AYZwtYbixr7Cf+0T60zhO7Z/fLqsfSIi6IwlyU91yNjmvSYvAmcW2VW3lvghXyv+kSBcxXcAY6Qw==}
+  playwright-core@1.62.0:
+    resolution: {integrity: sha512-nsNRyq0r2zsG8AcRHWknc9QRA5XCueC7gWMrs+Gx2tlZn9hcl8zudfh00lhJPY1DE7NmZ6bDsT9g2yey8mXljA==}
     engines: {node: '>=20'}
     hasBin: true
 
-  playwright@1.62.0-alpha-2026-07-16:
-    resolution: {integrity: sha512-Zu5CpdmHsvv6MNz3i3VcGdRVe3PE7K6hhCseUdhHiM2KElnIscNfJr3i8eF/W3+Vefja3Z0t0LTJHPxfvpuTgA==}
+  playwright@1.62.0:
+    resolution: {integrity: sha512-Z14dG305dgaLu6foB1TXQagFiW8JfSUIUaUuPaKQ6NtBPKF1P/qXcqfh6c6K/icPqdy37JmjbiBXf6JNg6Sylw==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -716,9 +716,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@playwright/test@1.62.0-alpha-2026-07-16':
+  '@playwright/test@1.62.0':
     dependencies:
-      playwright: 1.62.0-alpha-2026-07-16
+      playwright: 1.62.0
 
   '@sec-ant/readable-stream@0.4.1': {}
 
@@ -969,11 +969,11 @@ snapshots:
 
   path-key@4.0.0: {}
 
-  playwright-core@1.62.0-alpha-2026-07-16: {}
+  playwright-core@1.62.0: {}
 
-  playwright@1.62.0-alpha-2026-07-16:
+  playwright@1.62.0:
     dependencies:
-      playwright-core: 1.62.0-alpha-2026-07-16
+      playwright-core: 1.62.0
     optionalDependencies:
       fsevents: 2.3.2
 
