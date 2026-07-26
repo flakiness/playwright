@@ -15,6 +15,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
   - [Fetching a timings file from Flakiness.io](#fetching-a-timings-file-from-flakinessio)
   - [Commit the timings file](#commit-the-timings-file)
   - [Sharding granularity](#sharding-granularity)
+  - [What the reporter prints](#what-the-reporter-prints)
   - [Debugging test failures](#debugging-test-failures)
 - [Uploading Reports](#uploading-reports)
 - [Viewing Reports](#viewing-reports)
@@ -182,6 +183,33 @@ export default defineConfig({
 ```
 
 Without it, balancing is per-file — a single large spec file is one unit and lands entirely on one shard. You can also opt in selectively by wrapping the tests you want spread across shards in `test.describe.parallel()`.
+
+### What the reporter prints
+
+With `shardBalancing` configured, each shard reports its plan before the first test runs:
+
+```
+[flakiness.io] balancing 3 shards
+[flakiness.io]   timings file:   /repo/timings.json
+[flakiness.io]   duration hints: 412/430 tests (96%), the rest default to 1.0s
+[flakiness.io]   shard loads:    1=8m 12s, 2=8m 40s, 3=8m 51s
+[flakiness.io]   balance:        96%
+[flakiness.io] Running shard 2/3: 8m 40s of work, ~2m 10s across 4 workers
+```
+
+- **timings file** is the resolved path the duration hints were read from. `shardBalancing.timingsFile` is resolved against the working directory, so this is worth checking first whenever a split looks wrong.
+- **duration hints** is how much of the current test set your timings file actually covers. Tests it doesn't know about are priced at a 1 second default, so a low percentage means the split is closer to a guess than a balance. Refresh the timings file when this drops.
+- **shard loads** is the predicted work of every shard, keyed by shard number. Every shard prints the same line, since each one runs the identical balancing over the identical corpus.
+- **balance** is the average shard load as a share of the heaviest one, so 100% means every shard carries the same work. Shards run in parallel and the run is paid for at the heaviest shard on all of them, which makes the remainder the share of that purchased capacity sitting idle: at 96%, 4% of your shard time does nothing. A poor balance usually points at indivisible units of work (a long serial suite, or a setup project only some shards need) rather than at a bad timings file.
+- **Running shard** is the work assigned to this shard. All figures are serial sums of test durations, so the second number divides by the configured worker count to approximate wall time. It only appears when running with more than one worker.
+
+When the run finishes, the shard reports what it actually cost:
+
+```
+[flakiness.io] shard 2/3: predicted 8m 40s of work, actual 9m 12s (+6%)
+```
+
+A small percentage means the timings file still describes this suite well. A large one, pointing the same direction on every shard, usually means the timings are stale or were recorded on different hardware. A uniform scaling factor (every test 30% slower on a smaller CI machine) barely affects the balancing itself, since only the relative weights matter.
 
 ### Debugging test failures
 

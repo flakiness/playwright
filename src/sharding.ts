@@ -14,10 +14,21 @@ type ShardGroup = {
 // Default to 1 second 'predicted duration' for tests without duration hints.
 export const DEFAULT_DURATION = 1000;
 
-export function allocateBalancedShards(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>, shardsCount: number): TestCase[][] {
+export type BalancedShard = {
+  tests: TestCase[],
+  // Predicted work for this shard: the summed duration predictions of its tests
+  // plus the setup cost of every dependency project the shard has to run. This
+  // is a serial sum, not wall time - the shard runs it across `config.workers`.
+  work: number,
+};
+
+export function allocateBalancedShards(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>, shardsCount: number): BalancedShard[] {
   const shardGroups = prepareShardableTestEntries(config, rootSuite, durationPredictions);
   const shards = balanceShards(shardGroups, shardsCount);
-  return shards.map(shardGroups => shardGroups.map(group => group.tests).flat());
+  return shards.map(shard => ({
+    tests: shard.groups.map(group => group.tests).flat(),
+    work: shard.total,
+  }));
 }
 
 type Family = {
@@ -77,7 +88,7 @@ type Shard = {
  * 
  * Finally, we can use basic LPT to balance project work across selected shards.
  */
-function balanceShards(entries: ShardGroup[], N: number): ShardGroup[][] {
+function balanceShards(entries: ShardGroup[], N: number): Shard[] {
   // 1. All shard groups with the same dependencies are unified into a single "family".
   // In practice, each family is a node in the dependency tree.
   const familiesMap = new Map<string, Family>();
@@ -124,7 +135,7 @@ function balanceShards(entries: ShardGroup[], N: number): ShardGroup[][] {
         bestShard.deps.add(name);
     }
   }
-  return shards.map(shard => shard.groups);
+  return shards;
 }
 
 /**
