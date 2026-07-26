@@ -37,6 +37,7 @@ A custom Playwright test reporter that generates Flakiness Reports from your Pla
 
 ## Requirements
 
+- Node.js 22.9.0 or higher
 - Playwright 1.57.0 or higher (1.62.0 or higher for [balanced sharding](#balanced-sharding))
 - Node.js project with a git repository (for commit information)
 - Valid Flakiness.io access token (for uploads)
