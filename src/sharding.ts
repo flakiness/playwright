@@ -2,12 +2,11 @@ import type {
   FullConfig,
   Suite, TestCase
 } from '@playwright/test/reporter';
-import path from 'node:path';
 
 type ShardSlot = { current: number, total: number };
 
 type ShardGroup = {
-  ids: string[],
+  tests: TestCase[],
   work: number,
   deps: Map<string, number>,
 }
@@ -15,30 +14,10 @@ type ShardGroup = {
 // Default to 1 second 'predicted duration' for tests without duration hints.
 export const DEFAULT_DURATION = 1000;
 
-// Set by `flakiness-playwright-shard` on the real test run so the reporter knows
-// it is executing shard N/M. The wrapper selects tests via `--test-list`, so
-// Playwright's native `config.shard` is null and this hint is the only signal.
-export const SHARD_HINT_ENV = 'FLAKINESS_SHARD_HINT';
-
-export function parseShardSlot(value: string | undefined): ShardSlot | undefined {
-  if (!value)
-    return undefined;
-  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(value);
-  if (!match)
-    return undefined;
-  const current = Number(match[1]);
-  const total = Number(match[2]);
-  if (!total || current < 1 || current > total)
-    return undefined;
-  return { current, total };
-}
-
-export function generateBalancedShard(request: ShardSlot, config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>): string {
-  const shardGropus = prepareShardableTestEntries(config, rootSuite, durationPredictions);
-  const shards = balanceShards(shardGropus, request.total);
-  const selectedShard = shards[request.current - 1];
-  const testIds = selectedShard.map(shard => shard.ids).flat();
-  return testIds.join('\n') + '\n';
+export function allocateBalancedShards(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>, shardsCount: number): TestCase[][] {
+  const shardGroups = prepareShardableTestEntries(config, rootSuite, durationPredictions);
+  const shards = balanceShards(shardGroups, shardsCount);
+  return shards.map(shardGroups => shardGroups.map(group => group.tests).flat());
 }
 
 type Family = {
@@ -238,25 +217,25 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, durat
 
   // Group all tests into shard groups. Each shard group is identified either by
   // a suite (an outermost serial suite), or a testCaseId (if tests are executed with repeat-each).
-  const shardGroups = new Map<string, ShardGroup>();
+  type ShardGroupId = Suite|TestCase;
+  const shardGroups = new Map<ShardGroupId, ShardGroup>();
 
   for (const testCase of leafTests) {
     const proj = testCase.parent.project();
     if (!proj)
       continue;
 
-    const testEntryId = createTestEntryId(testCase, config.rootDir);
-    const shardGroupId = createSuiteId(computeShardSuite(testCase)) ?? testEntryId;
+    const shardGroupId = computeShardSuite(testCase) ?? testCase;
     let shardGroup = shardGroups.get(shardGroupId);
     if (!shardGroup) {
       shardGroup = {
         deps: new Map(),
         work: 0,
-        ids: [],
+        tests: [],
       }
       shardGroups.set(shardGroupId, shardGroup);
     }
-    shardGroup.ids.push(testEntryId);
+    shardGroup.tests.push(testCase);
     shardGroup.work += durationPredictions.get(testCase) ?? DEFAULT_DURATION;
     for (const dep of leafProjectClosure.get(proj.name) ?? [])
       shardGroup.deps.set(dep, projectDurations.get(dep) ?? 0);
@@ -286,33 +265,4 @@ function computeShardSuite(testCase: TestCase): Suite|undefined {
   if (outermostSequential)
     return outermostSequential;
   return undefined;
-}
-
-function createSuiteId(suite: Suite|undefined) {
-  const tokens: string[][] = [];
-  while (suite) {
-    if (suite.type === 'root')
-      break;
-    const suiteId = [suite.title];
-    if (suite.location)
-      suiteId.push(suite.location.file + ':' + suite.location.line + ':' + suite.location.column);
-    tokens.push(suiteId);
-    suite = suite.parent;
-  }
-  return tokens.length ? JSON.stringify(tokens.reverse()) : undefined;
-}
-
-function createTestEntryId(testCase: TestCase, rootDir: string): string {
-  // TestCase.titlePath() returns ['', projectName, fileRelative, ...describeTitles, testTitle].
-  // Playwright's --test-list parser expects: `[projectName] › relativeFile › title1 › ... › testTitle`,
-  // with `›` (U+203A) as the delimiter and the file path relative to config.rootDir (posix).
-  const titlePath = testCase.titlePath();
-  const projectName = titlePath[1] ?? '';
-  const titles = titlePath.slice(3);
-  const relativeFile = path.relative(rootDir, testCase.location.file).split(path.sep).join('/');
-  const segments = [];
-  if (projectName)
-    segments.push(`[${projectName}]`);
-  segments.push([relativeFile, testCase.location.line, testCase.location.column].join(':'), ...titles);
-  return segments.join(' › ');
 }

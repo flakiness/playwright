@@ -10,8 +10,8 @@ const usage = `Usage:
   flakiness-playwright-timings build <report.json...> [-o <output>]
   flakiness-playwright-timings fetch [playwright test args...] [-o <output>]
 
-Produces a lean timings report (for "flakiness-playwright-shard --timings=<output>")
-from local Flakiness reports, or by fetching historical durations from Flakiness.io.
+Produces a lean timings report (for the reporter's "shardBalancing: { timingsFile: <output> }"
+option) from local Flakiness reports, or by fetching historical durations from Flakiness.io.
 
 Subcommands:
   build   Combine and minimize durations from one or more local Flakiness reports.

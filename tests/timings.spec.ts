@@ -5,7 +5,7 @@ import fs from 'fs';
 import { DEFAULT_DURATION } from '../src/sharding.js';
 import { generateFlakinessReport, reportTestCount, reportTestTitles, runBalancedShardRaw, runBalancedShards } from './utils.js';
 
-test('should balance shards using a --timings file instead of the Durations API', async ({}, testInfo) => {
+test('should balance shards using a timings file instead of the Durations API', async ({}, testInfo) => {
   const files = {
     'example.spec.ts': `
       import { test } from '@playwright/test';
@@ -23,14 +23,14 @@ test('should balance shards using a --timings file instead of the Durations API'
   const timingsFile = testInfo.outputPath('timings.json');
   fs.writeFileSync(timingsFile, JSON.stringify(report));
 
-  const shards = await runBalancedShards(testInfo, files, 2, {}, { fullyParallel: true }, undefined, [`--timings=${timingsFile}`]);
+  const shards = await runBalancedShards(testInfo, files, 2, { shardBalancing: { timingsFile } }, { fullyParallel: true });
 
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
   const soloShard = shards.find(shard => reportTestCount(shard.report) === 1)!;
   expect(reportTestTitles(soloShard.report)).toEqual(['alpha']);
 });
 
-test('should balance shards using per-environment durations from a --timings file', async ({}, testInfo) => {
+test('should balance shards using per-environment durations from a timings file', async ({}, testInfo) => {
   const files = {
     'example.spec.ts': `
       import { test } from '@playwright/test';
@@ -70,14 +70,12 @@ test('should balance shards using per-environment durations from a --timings fil
   fs.writeFileSync(timingsFile, JSON.stringify(report));
 
   // Now, when sharding only the slow tests, we expect to see 1:3 split
-  const slowShards = await runBalancedShards(testInfo, files, 2, {}, playwrightConfig, undefined, [
-    `--timings=${timingsFile}`,
+  const slowShards = await runBalancedShards(testInfo, files, 2, { shardBalancing: { timingsFile } }, playwrightConfig, undefined, [
     `--project=slow`,
   ]);
   expect(slowShards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
   // Now, when sharding only the fast tests, we expect to see 2:2 split
-  const fastShards = await runBalancedShards(testInfo, files, 2, {}, playwrightConfig, undefined, [
-    `--timings=${timingsFile}`,
+  const fastShards = await runBalancedShards(testInfo, files, 2, { shardBalancing: { timingsFile } }, playwrightConfig, undefined, [
     `--project=fast`,
   ]);
   expect(fastShards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([2, 2]);
@@ -122,9 +120,7 @@ test('should fallback to durations when env name does not match', async ({}, tes
   fs.writeFileSync(timingsFile, JSON.stringify(report));
 
   // Make sure that sharding still uses the duration hints despite the unusual environment.
-  const shards = await runBalancedShards(testInfo, files, 2, {}, playwrightConfig, undefined, [
-    `--timings=${timingsFile}`,
-  ]);
+  const shards = await runBalancedShards(testInfo, files, 2, { shardBalancing: { timingsFile } }, playwrightConfig);
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
 });
 
@@ -158,9 +154,7 @@ test('should still shard when there are new tests', async ({}, testInfo) => {
       test('gamma', async () => {});
       test('delta', async () => {});
     `,
-  }, 2, {}, playwrightConfig, undefined, [
-    `--timings=${timingsFile}`,
-  ]);
+  }, 2, { shardBalancing: { timingsFile } }, playwrightConfig);
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
 });
 
@@ -197,13 +191,11 @@ test('should accumulate retries when estimating test duration', async ({}, testI
       test('gamma', async () => {});
       test('delta', async () => {});
     `,
-  }, 2, {}, playwrightConfig, undefined, [
-    `--timings=${timingsFile}`,
-  ]);
+  }, 2, { shardBalancing: { timingsFile } }, playwrightConfig);
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([1, 3]);
 });
 
-test('should fail with a clear message when the --timings file is missing', async ({}, testInfo) => {
+test('should fail with a clear message when the timings file is missing', async ({}, testInfo) => {
   const files = {
     'example.spec.ts': `
       import { test } from '@playwright/test';
@@ -212,16 +204,16 @@ test('should fail with a clear message when the --timings file is missing', asyn
     `,
   };
   const missing = testInfo.outputPath('does-not-exist.json');
-  const { exitCode, stderr } = await runBalancedShardRaw(testInfo, files, '1/2', {}, { fullyParallel: true }, undefined, [
-    `--timings=${missing}`,
-  ]);
+  const { exitCode, stdout, stderr } = await runBalancedShardRaw(testInfo, files, '1/2', {
+    shardBalancing: { timingsFile: missing },
+  }, { fullyParallel: true });
   expect(exitCode).not.toBe(0);
   // The error must point at the timings file, not at some unrelated cause.
-  expect(stderr).toContain('--timings file');
-  expect(stderr).toContain(missing);
+  expect(stdout + stderr).toContain('shardBalancing.timingsFile');
+  expect(stdout + stderr).toContain(missing);
 });
 
-test('should fail with a clear message when the --timings file is malformed', async ({}, testInfo) => {
+test('should fail with a clear message when the timings file is malformed', async ({}, testInfo) => {
   const files = {
     'example.spec.ts': `
       import { test } from '@playwright/test';
@@ -231,10 +223,10 @@ test('should fail with a clear message when the --timings file is malformed', as
   };
   const badTimings = testInfo.outputPath('bad-timings.json');
   fs.writeFileSync(badTimings, 'this is not valid json {{{');
-  const { exitCode, stderr } = await runBalancedShardRaw(testInfo, files, '1/2', {}, { fullyParallel: true }, undefined, [
-    `--timings=${badTimings}`,
-  ]);
+  const { exitCode, stdout, stderr } = await runBalancedShardRaw(testInfo, files, '1/2', {
+    shardBalancing: { timingsFile: badTimings },
+  }, { fullyParallel: true });
   expect(exitCode).not.toBe(0);
-  expect(stderr).toContain('--timings file');
-  expect(stderr).toMatch(/JSON|parse/i);
+  expect(stdout + stderr).toContain('shardBalancing.timingsFile');
+  expect(stdout + stderr).toMatch(/JSON|parse/i);
 });

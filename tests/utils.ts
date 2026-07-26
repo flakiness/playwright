@@ -5,7 +5,7 @@ import assert from 'node:assert';
 import { execFile, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { durationFromWeightInTitle, startFakeDurationsServer } from './fakeDurationsServer.js';
+import { durationFromWeightInTitle, reportWithExecutedDurations, startFakeDurationsServer } from './fakeDurationsServer.js';
 
 // On MacOS, the /tmp is a symlink to /private/tmp. This results
 // in stack traces using `/private/tmp`. This might confuse some
@@ -24,6 +24,7 @@ type FlakinessReporterOptions = {
   open?: 'always' | 'never' | 'on-failure',
   collectBrowserVersions?: boolean,
   disableUpload?: boolean,
+  shardBalancing?: { timingsFile: string },
 };
 
 const DEFAULT_FILES: Record<string, string> = {
@@ -100,42 +101,17 @@ async function runPlaywright(
     ...(extraEnv ?? {}),
   };
   delete (env as any)['CI'];
-  return await new Promise<{ stdout: string, stderr: string }>(resolve => {
-    execFile(process.execPath, [playwrightCli, 'test', ...cliArgs], {
-      cwd: targetDir,
-      env,
-      encoding: 'utf-8',
-      maxBuffer: 10 * 1024 * 1024,
-    }, (_error, stdout, stderr) => {
-      // Playwright exits with non-zero for test failures, which is expected
-      // for some tests. We still want the report.
-      resolve({ stdout, stderr });
-    });
-  });
-}
-
-async function runFlakinessPlaywrightShard(
-  targetDir: string,
-  extraEnv: Record<string, string> | undefined,
-  shard: string,
-  cliArgs: string[] = [],
-) {
-  const shardCli = path.join(PROJECT_ROOT, 'lib', 'flakiness-playwright-shard.js');
-  assert(fs.existsSync(shardCli), `missing flakiness-playwright-shard CLI at ${shardCli}`);
-  const env = {
-    ...process.env,
-    NODE_PATH: path.join(PROJECT_ROOT, 'node_modules'),
-    ...(extraEnv ?? {}),
-  };
-  delete (env as any)['CI'];
   return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
-    execFile(process.execPath, [shardCli, `--shard=${shard}`, `--workers=1`, ...cliArgs], {
+    execFile(process.execPath, [playwrightCli, 'test', ...cliArgs], {
       cwd: targetDir,
       env,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024,
       timeout: 60_000,
     }, (error, stdout, stderr) => {
+      // Playwright exits with non-zero for test failures, which is expected
+      // for some tests. We still want the report, so we do not throw here and
+      // let callers inspect `exitCode` when they care.
       const exitCode = error ? (typeof (error as any).code === 'number' ? (error as any).code : 1) : 0;
       resolve({ stdout, stderr, exitCode });
     });
@@ -207,17 +183,30 @@ export async function runBalancedShards(
   }[]> {
   assert(Number.isInteger(shards) && shards >= 1, `shards must be a positive integer, got ${shards}`);
 
-  using durationsServer = await startFakeDurationsServer();
+  // Unless the caller brings its own timings file, seed one from a full run:
+  // execute every test once (no shard or project filter), then rewrite the
+  // executed durations to the title-encoded weights so balancing is
+  // deterministic. This mirrors a real previous run's report and — unlike the
+  // dropped Durations API path — prices dependency (setup/teardown) projects.
+  const seededTimingsFile = 'timings.json';
+  const shardBalancing = options?.shardBalancing ?? { timingsFile: seededTimingsFile };
+
   const { targetDir, reportDir } = await initializeDirectoryWithTests(testInfo, files, {
     ...(options ?? {}),
-    endpoint: durationsServer.endpoint,
-    token: options?.token ?? 'fake-token',
+    shardBalancing,
   }, playwrightConfig);
+
+  if (!options?.shardBalancing) {
+    const seed = await runPlaywright(targetDir, extraEnv, ['--workers=1']);
+    assert.strictEqual(seed.exitCode, 0, seed.stderr || seed.stdout);
+    const { report } = await readReport(reportDir);
+    fs.writeFileSync(path.join(targetDir, seededTimingsFile), JSON.stringify(reportWithExecutedDurations(report)));
+  }
 
   const result: { totalWeight: number, report: FlakinessReport.Report }[] = [];
   for (let currentShard = 1; currentShard <= shards; ++currentShard) {
     fs.rmSync(reportDir, { recursive: true, force: true });
-    const log = await runFlakinessPlaywrightShard(targetDir, extraEnv, `${currentShard}/${shards}`, cliArgs);
+    const log = await runPlaywright(targetDir, extraEnv, [`--shard=${currentShard}/${shards}`, '--workers=1', ...cliArgs]);
     assert.strictEqual(log.exitCode, 0, log.stderr || log.stdout);
 
     const { report } = await readReport(reportDir);
@@ -228,7 +217,7 @@ export async function runBalancedShards(
 
 // Runs a single balanced shard and returns the raw process result WITHOUT
 // asserting a zero exit code. Use this to test failure paths (e.g. a bad
-// --timings file) where the shard generation is expected to fail.
+// timings file) where the shard generation is expected to fail.
 export async function runBalancedShardRaw(
     testInfo: TestInfo,
     files: Record<string, string>,
@@ -239,7 +228,7 @@ export async function runBalancedShardRaw(
     cliArgs: string[] = [],
   ): Promise<{ stdout: string, stderr: string, exitCode: number | null }> {
   const { targetDir } = await initializeDirectoryWithTests(testInfo, files, options, playwrightConfig);
-  return await runFlakinessPlaywrightShard(targetDir, extraEnv, shard, cliArgs);
+  return await runPlaywright(targetDir, extraEnv, [`--shard=${shard}`, '--workers=1', ...cliArgs]);
 }
 
 // Runs `flakiness-playwright-timings fetch` against a fixture. By default it

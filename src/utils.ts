@@ -1,7 +1,6 @@
-// Shared plumbing for the `flakiness-playwright-shard` and
-// `flakiness-playwright-timings` wrapper binaries. Both spawn `playwright test`
-// after parsing a couple of their own flags off the front, so the argument
-// parsing, Playwright resolution and process handling live here once.
+// Shared plumbing for the `flakiness-playwright-timings` wrapper binary (which
+// spawns `playwright test` after parsing a couple of its own flags off the
+// front) and the reporter itself (`readReportFile`).
 
 import { FlakinessReport as FK } from '@flakiness/flakiness-report';
 import { spawnSync } from 'node:child_process';
@@ -85,7 +84,7 @@ export function formatDuration(durationMS: number): string {
 
 // Reads and parses a Flakiness report JSON file, throwing errors that name the
 // offending file and the real cause (missing file, bad JSON, wrong shape).
-// `label` is the noun used in error messages (e.g. `--timings file`).
+// `label` is the noun used in error messages (e.g. `shardBalancing.timingsFile`).
 export async function readReportFile(aPath: string, label = 'report'): Promise<FK.Report> {
   let text: string;
   try {
