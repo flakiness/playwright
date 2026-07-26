@@ -78,8 +78,17 @@ export function parseArgs(args: string[], spec: ArgsSpec): ParsedArgs {
   return { values, flags, passthrough };
 }
 
+// Compact duration for human-facing logs: "820ms", "12.4s", "3m 20s", "1h 04m".
 export function formatDuration(durationMS: number): string {
-  return `${(durationMS / 1000).toFixed(1)} seconds`;
+  if (durationMS < 1000)
+    return `${Math.round(durationMS)}ms`;
+  if (durationMS < 60_000)
+    return `${(durationMS / 1000).toFixed(1)}s`;
+  const totalSeconds = Math.round(durationMS / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60)
+    return `${minutes}m ${(totalSeconds % 60).toString().padStart(2, '0')}s`;
+  return `${Math.floor(minutes / 60)}h ${(minutes % 60).toString().padStart(2, '0')}m`;
 }
 
 // Reads and parses a Flakiness report JSON file, throwing errors that name the

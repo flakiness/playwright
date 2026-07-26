@@ -180,6 +180,7 @@ export async function runBalancedShards(
   ): Promise<{
     totalWeight: number,
     report: FlakinessReport.Report,
+    stdout: string,
   }[]> {
   assert(Number.isInteger(shards) && shards >= 1, `shards must be a positive integer, got ${shards}`);
 
@@ -203,14 +204,14 @@ export async function runBalancedShards(
     fs.writeFileSync(path.join(targetDir, seededTimingsFile), JSON.stringify(reportWithExecutedDurations(report)));
   }
 
-  const result: { totalWeight: number, report: FlakinessReport.Report }[] = [];
+  const result: { totalWeight: number, report: FlakinessReport.Report, stdout: string }[] = [];
   for (let currentShard = 1; currentShard <= shards; ++currentShard) {
     fs.rmSync(reportDir, { recursive: true, force: true });
     const log = await runPlaywright(targetDir, extraEnv, [`--shard=${currentShard}/${shards}`, '--workers=1', ...cliArgs]);
     assert.strictEqual(log.exitCode, 0, log.stderr || log.stdout);
 
     const { report } = await readReport(reportDir);
-    result.push({ report, totalWeight: reportTotalWeight(report) });
+    result.push({ report, totalWeight: reportTotalWeight(report), stdout: log.stdout });
   }
   return result;
 }

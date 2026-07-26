@@ -23,9 +23,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as nodeUtil from 'node:util';
 import { buildReport } from './reportBuilder.js';
-import { allocateBalancedShards } from './sharding.js';
+import { allocateBalancedShards, BalancedShard, DEFAULT_DURATION } from './sharding.js';
 import { computeDurationPredictions, distillTimings } from './timings.js';
-import { readReportFile } from './utils.js';
+import { formatDuration, readReportFile } from './utils.js';
 
 type StyleTextFormat = Parameters<NonNullable<typeof nodeUtil.styleText>>[0];
 
@@ -77,6 +77,9 @@ export default class FlakinessReporter implements Reporter {
 
   private _telemetryTimer?: NodeJS.Timeout;
   private _preprocessCalled = false;
+  // Set by `preprocess` when balanced sharding runs, so `onEnd` can compare the
+  // shard's predicted work against what it actually cost.
+  private _shardPlan?: { current: number, total: number, predictedWork: number };
 
   constructor(private _options: {
     flakinessProject?: string,
@@ -146,12 +149,21 @@ export default class FlakinessReporter implements Reporter {
       const durationsReport = await readReportFile(balancing.timingsFile, 'shardBalancing.timingsFile');
       const durationPredictions = computeDurationPredictions(durationsReport, projectToEnvNames, testMappings);
       const balancedShards = allocateBalancedShards(config, suite, durationPredictions, config.shard.total);
-      // Keep the current shard; splice it out so `balancedShards` holds only the
-      // other shards, and exclude every test that belongs to them.
-      balancedShards.splice(config.shard.current - 1, 1);
-      const testsToExclude = new Set(balancedShards.flat());
-      for (const test of testsToExclude)
-        testRun.exclude(test);
+      const selectedShard = balancedShards[config.shard.current - 1];
+      this._shardPlan = {
+        current: config.shard.current,
+        total: config.shard.total,
+        predictedWork: selectedShard.work,
+      };
+      logShardPlan(config, suite, balancing.timingsFile, durationPredictions, balancedShards, selectedShard);
+
+      // Keep the current shard, and exclude every test belonging to the others.
+      for (const shard of balancedShards) {
+        if (shard === selectedShard)
+          continue;
+        for (const test of shard.tests)
+          testRun.exclude(test);
+      }
       testRun.skipSharding();
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
@@ -205,10 +217,32 @@ export default class FlakinessReporter implements Reporter {
     this._results.set(test, results);
   }
 
+  // Closes the loop on the prediction `preprocess` logged: how much work this
+  // shard actually turned out to be. Every attempt counts, matching the way the
+  // timings file sums retries into a test's cost.
+  private _logShardOutcome() {
+    if (!this._shardPlan)
+      return;
+    const { current, total, predictedWork } = this._shardPlan;
+    let actualWork = 0;
+    for (const results of this._results.values()) {
+      for (const testResult of results)
+        actualWork += testResult.duration;
+    }
+    if (!predictedWork) {
+      log(`Shard ${current}/${total} finished: ${formatDuration(actualWork)} of work (no prediction to compare against)`);
+      return;
+    }
+    const delta = Math.round(100 * (actualWork - predictedWork) / predictedWork);
+    const sign = delta > 0 ? '+' : '';
+    log(`Shard ${current}/${total} finished: predicted ${formatDuration(predictedWork)} of work, actual ${formatDuration(actualWork)} (${sign}${delta}%)`);
+  }
+
   async onEnd(result: FullResult) {
     clearTimeout(this._telemetryTimer);
     this._cpuUtilization.sample();
     this._ramUtilization.sample();
+    this._logShardOutcome();
     if (!this._config || !this._rootSuite)
       throw new Error('ERROR: failed to resolve config');
     const worktreeResult = GitWorktree.initialize(this._config.rootDir);
@@ -343,6 +377,55 @@ async function workaroundNodeWindowsCrash() {
 
 function envBool(name: string): boolean {
   return ['1', 'true'].includes(process.env[name]?.toLowerCase() ?? '');
+}
+
+// Summarizes the balancing decision before any test runs: how much of the
+// corpus the timings file actually covers, how evenly the work landed across
+// shards, and what this shard is in for. `work` figures are serial sums, so we
+// also show the wall-time estimate they imply at the configured worker count.
+function logShardPlan(
+  config: FullConfig,
+  suite: Suite,
+  timingsFile: string,
+  durationPredictions: Map<TestCase, number>,
+  shards: BalancedShard[],
+  selected: BalancedShard,
+) {
+  const slot = config.shard;
+  if (!slot)
+    return;
+  const allTests = suite.allTests();
+  const hinted = allTests.filter(test => durationPredictions.has(test)).length;
+  const percent = allTests.length ? Math.round(100 * hinted / allTests.length) : 0;
+  const works = shards.map(shard => shard.work);
+  const maxWork = Math.max(...works);
+  const meanWork = works.reduce((acc, work) => acc + work, 0) / works.length;
+  // Shards run in parallel, so the run is paid for at `maxWork` on every shard
+  // while only `meanWork` of that is useful. Their ratio is the share of the
+  // purchased capacity actually doing work: 100% means no shard sits idle.
+  // Using the mean rather than the lightest shard keeps this sensitive to the
+  // whole distribution - [10,10,10,10,6] scores 92% while [10,6,6,6,6] scores
+  // 68%, though both have the same lightest-to-heaviest ratio.
+  const balance = maxWork > 0 ? Math.round(100 * meanWork / maxWork) : 100;
+  // `config.workers` is the per-shard worker count, so the wall-time estimate is
+  // this shard's own work spread across them.
+  const workers = Math.max(1, config.workers);
+
+  // Only mention the fallback when something actually fell back, and only show
+  // the wall-time estimate when it differs from the work sum (workers > 1).
+  const fallback = hinted < allTests.length ? `, the rest default to ${formatDuration(DEFAULT_DURATION)}` : '';
+  const wallTime = workers > 1 ? `, ~${formatDuration(selected.work / workers)} across ${workers} workers` : '';
+
+  // Every shard's predicted work, keyed by shard number, so the whole split is
+  // visible at a glance instead of just its extremes.
+  const shardLoads = works.map((work, index) => `${index + 1}=${formatDuration(work)}`).join(', ');
+
+  log(`balancing ${shards.length} shards`);
+  log(`  timings file:   ${path.resolve(timingsFile)}`);
+  log(`  duration hints: ${hinted}/${allTests.length} tests (${percent}%)${fallback}`);
+  log(`  shard loads:    ${shardLoads}`);
+  log(`  balance:        ${balance}%`);
+  log(`Running shard ${slot.current}/${slot.total}: ${formatDuration(selected.work)} of work${wallTime}`);
 }
 
 // Default report title when this run is part of a shard (`--shard=N/M`).
