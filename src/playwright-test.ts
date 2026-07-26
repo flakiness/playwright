@@ -8,7 +8,7 @@ import {
   RAMUtilization,
   ReportUtils,
   showReport,
-  showReportCommand,
+  showReportMessage,
   uploadReport,
   writeReport
 } from '@flakiness/sdk';
@@ -325,12 +325,7 @@ export default class FlakinessReporter implements Reporter {
     if (shouldOpen) {
       await showReport(this._outputFolder);
     } else {
-      const command = showReportCommand(this._outputFolder);
-      console.log(`
-To open last Flakiness report, run:
-
-  ${styleText('cyan', command)}
-      `);
+      console.log(showReportMessage(this._outputFolder));
     }
     await workaroundNodeWindowsCrash();
   }
