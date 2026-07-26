@@ -317,7 +317,7 @@ export default class FlakinessReporter implements Reporter {
       });
     }
 
-    const openMode = this._options.open ?? 'on-failure';
+    const openMode = this._options.open ?? 'never';
     // Playwright v1.57+ correctly sets up `process.stdin.isTTY`
     // when the reporter is launched via a VSCode Playwright extension.
     // https://github.com/microsoft/playwright/issues/37867

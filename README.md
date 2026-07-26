@@ -351,9 +351,9 @@ reporter: [
 
 Controls when the report viewer should automatically open in your browser after test completion.
 
-- **`'on-failure'`** (default): Opens the report only if tests failed and running in an interactive terminal (not in CI)
+- **`'never'`** (default): Never automatically opens the report. The reporter prints the `flakiness show` command instead
+- **`'on-failure'`**: Opens the report only if tests failed and running in an interactive terminal (not in CI)
 - **`'always'`**: Always opens the report after test completion (when running in an interactive terminal)
-- **`'never'`**: Never automatically opens the report
 
 ```typescript
 reporter: [
