@@ -155,7 +155,7 @@ export default class FlakinessReporter implements Reporter {
         total: config.shard.total,
         predictedWork: selectedShard.work,
       };
-      logShardPlan(config, suite, balancing.timingsFile, durationPredictions, balancedShards, selectedShard);
+      logShardPlan(config, suite, balancing.timingsFile, durationPredictions, balancedShards, selectedShard, this._options._mode === 'list');
 
       // Keep the current shard, and exclude every test belonging to the others.
       for (const shard of balancedShards) {
@@ -221,7 +221,10 @@ export default class FlakinessReporter implements Reporter {
   // shard actually turned out to be. Every attempt counts, matching the way the
   // timings file sums retries into a test's cost.
   private _logShardOutcome() {
-    if (!this._shardPlan)
+    // `--list` runs go through `preprocess` (that is how balancing applies to
+    // the listed set) but never execute a test, so there is no actual work to
+    // compare against - reporting one would read as a 100% timing miss.
+    if (!this._shardPlan || this._options._mode === 'list')
       return;
     const { current, total, predictedWork } = this._shardPlan;
     let actualWork = 0;
@@ -390,6 +393,7 @@ function logShardPlan(
   durationPredictions: Map<TestCase, number>,
   shards: BalancedShard[],
   selected: BalancedShard,
+  listOnly: boolean,
 ) {
   const slot = config.shard;
   if (!slot)
@@ -425,7 +429,10 @@ function logShardPlan(
   log(`  duration hints: ${hinted}/${allTests.length} tests (${percent}%)${fallback}`);
   log(`  shard loads:    ${shardLoads}`);
   log(`  balance:        ${balance}%`);
-  log(`Running shard ${slot.current}/${slot.total}: ${formatDuration(selected.work)} of work${wallTime}`);
+  // A `--list` run resolves the same split but executes nothing, so it gets the
+  // plan without the claim that anything is being run.
+  const heading = listOnly ? `Shard ${slot.current}/${slot.total}:` : `Running shard ${slot.current}/${slot.total}:`;
+  log(`${heading} ${formatDuration(selected.work)} of work${wallTime}`);
 }
 
 // Default report title when this run is part of a shard (`--shard=N/M`).

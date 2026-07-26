@@ -670,7 +670,8 @@ test('should log the shard plan and outcome', async ({}, testInfo) => {
   // Pre-run plan: full coverage, so no fallback clause and no worker estimate
   // (the fixtures run with --workers=1).
   expect(shards[0].stdout).toContain('balancing 2 shards');
-  expect(shards[0].stdout).toMatch(/timings file:   \/.*timings\.json/);
+  // Absolute on both platforms: a POSIX root or a Windows drive letter.
+  expect(shards[0].stdout).toMatch(/timings file:   (\/|[A-Za-z]:\\).*timings\.json/);
   expect(shards[0].stdout).toContain('duration hints: 5/5 tests (100%)');
   expect(shards[0].stdout).not.toContain('the rest default to');
   expect(shards[0].stdout).toContain('shard loads:    1=30ms, 2=30ms');
@@ -685,3 +686,26 @@ test('should log the shard plan and outcome', async ({}, testInfo) => {
   expect(shards[1].stdout).toMatch(/Shard 2\/2 finished: predicted 30ms of work, actual \d+ms \([-+]\d+%\)/);
 });
 
+
+test('should not report a shard outcome for --list runs', async ({}, testInfo) => {
+  const shards = await runBalancedShards(testInfo, {
+    'example.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=30 alpha', async () => {});
+      test('w=10 beta', async () => {});
+      test('w=10 gamma', async () => {});
+      test('w=5 delta', async () => {});
+      test('w=5 epsilon', async () => {});
+    `,
+  }, 2, {}, { fullyParallel: true }, undefined, ['--list']);
+
+  // Listing resolves the same split, so the plan is still worth printing.
+  expect(shards[0].stdout).toContain('balancing 2 shards');
+  expect(shards[0].stdout).toContain('shard loads:    1=30ms, 2=30ms');
+  expect(shards[0].stdout).toContain('Shard 1/2: 30ms of work');
+
+  // ...but nothing ran, so neither line may claim otherwise.
+  expect(shards[0].stdout).not.toContain('Running shard');
+  expect(shards[0].stdout).not.toContain('finished:');
+});
