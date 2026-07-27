@@ -201,12 +201,12 @@ With `shardBalancing` configured, each shard reports its plan before the first t
 - **duration hints** is how much of the current test set your timings file actually covers. Tests it doesn't know about are priced at a 1 second default, so a low percentage means the split is closer to a guess than a balance. Refresh the timings file when this drops.
 - **shard loads** is the predicted work of every shard, keyed by shard number. Every shard prints the same line, since each one runs the identical balancing over the identical corpus.
 - **balance** is the average shard load as a share of the heaviest one, so 100% means every shard carries the same work. Shards run in parallel and the run is paid for at the heaviest shard on all of them, which makes the remainder the share of that purchased capacity sitting idle: at 96%, 4% of your shard time does nothing. A poor balance usually points at indivisible units of work (a long serial suite, or a setup project only some shards need) rather than at a bad timings file.
-- **Running shard** is the work assigned to this shard. All figures are serial sums of test durations, so the second number divides by the configured worker count to approximate wall time. It only appears when running with more than one worker.
+- **Running shard** is the work assigned to this shard. All figures are serial sums of test durations; the wall time estimate divides that by the configured worker count, and is omitted when running with a single worker.
 
 When the run finishes, the shard reports what it actually cost:
 
 ```
-[flakiness.io] shard 2/3: predicted 8m 40s of work, actual 9m 12s (+6%)
+[flakiness.io] Shard 2/3 finished: predicted 8m 40s of work, actual 9m 12s (+6%)
 ```
 
 A small percentage means the timings file still describes this suite well. A large one, pointing the same direction on every shard, usually means the timings are stale or were recorded on different hardware. A uniform scaling factor (every test 30% slower on a smaller CI machine) barely affects the balancing itself, since only the relative weights matter.
@@ -333,7 +333,7 @@ reporter: [
 
 ### `title?: string`
 
-Optional human-readable report title. Typically used to name a CI run, matrix shard, or other execution group. Defaults to the `FLAKINESS_TITLE` environment variable if set, or empty otherwise.
+Optional human-readable report title. Typically used to name a CI run, matrix shard, or other execution group. Defaults to the `FLAKINESS_TITLE` environment variable if set; otherwise a run with `--shard=N/M` is titled `Shard N/M`, and an unsharded run has no title.
 
 ```typescript
 reporter: [
