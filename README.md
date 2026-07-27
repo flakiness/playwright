@@ -246,7 +246,7 @@ Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authe
   1. The `flakinessProject` option must be set to your Flakiness.io project identifier (`org/project`).
   2. The Flakiness.io project must be bound to the GitHub repository that runs the GitHub Actions workflow.
   3. The workflow must grant the `id-token: write` permission.
-- **GitLab OIDC**: When running in GitLab CI/CD with no access token, the reporter can authenticate using a GitLab ID token. GitHub Actions mints its token at runtime, but GitLab mints ID tokens when the job starts, so the job must declare one named `FLAKINESS_ID_TOKEN` whose audience is your project identifier:
+- **GitLab OIDC**: When running in GitLab CI/CD with no access token, the reporter can authenticate using a GitLab ID token. GitLab mints ID tokens when the job starts, so the job must declare one named `FLAKINESS_ID_TOKEN` whose audience is your project identifier:
 
   ```yaml
   test:
@@ -257,7 +257,7 @@ Reports are automatically uploaded to Flakiness.io in the `onExit()` hook. Authe
       - npx playwright test
   ```
 
-  The `aud` claim expands CI/CD variables (GitLab 16.1+), so a shared pipeline template can use `aud: $FLAKINESS_PROJECT`. As with GitHub, the `flakinessProject` option must be set, and the Flakiness.io project must be bound to the GitLab project running the pipeline.
+  The `flakinessProject` option must be set, and the Flakiness.io project must be bound to the GitLab project running the pipeline.
 
 If no method is available the upload is skipped, and if an upload fails the report is still available locally in the output folder. Either way the test run is unaffected.
 
