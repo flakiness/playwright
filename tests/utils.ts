@@ -101,6 +101,10 @@ async function runPlaywright(
     ...(extraEnv ?? {}),
   };
   delete (env as any)['CI'];
+  // Playwright forces colors in its workers. Do not pass through NO_COLOR as
+  // well: Node warns about the conflicting variables and attributes that
+  // warning to whichever test happens to be running when the worker starts.
+  delete (env as any)['NO_COLOR'];
   return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
     execFile(process.execPath, [playwrightCli, 'test', ...cliArgs], {
       cwd: targetDir,
@@ -131,6 +135,7 @@ async function runFlakinessPlaywrightTimings(
     ...(extraEnv ?? {}),
   };
   delete (env as any)['CI'];
+  delete (env as any)['NO_COLOR'];
   return await new Promise<{ stdout: string, stderr: string, exitCode: number | null }>(resolve => {
     execFile(process.execPath, [timingsCli, ...args], {
       cwd: targetDir,
@@ -243,19 +248,23 @@ export async function fetchTimings(
     playwrightConfig?: PlaywrightTestConfig,
     opts?: { auth?: boolean, cliArgs?: string[] },
   ): Promise<{ exitCode: number | null, stdout: string, stderr: string, timings?: FlakinessReport.Report }> {
-  using durationsServer = await startFakeDurationsServer();
-  const { targetDir } = await initializeDirectoryWithTests(testInfo, files, {}, playwrightConfig);
-  const timingsFile = path.join(targetDir, 'timings.json');
-  const args = ['fetch', '-o', timingsFile, ...(opts?.cliArgs ?? [])];
-  const extraEnv = opts?.auth !== false
-    ? { FLAKINESS_ACCESS_TOKEN: 'fake-token', FLAKINESS_ENDPOINT: durationsServer.endpoint }
-    : undefined;
+  const durationsServer = await startFakeDurationsServer();
+  try {
+    const { targetDir } = await initializeDirectoryWithTests(testInfo, files, {}, playwrightConfig);
+    const timingsFile = path.join(targetDir, 'timings.json');
+    const args = ['fetch', '-o', timingsFile, ...(opts?.cliArgs ?? [])];
+    const extraEnv = opts?.auth !== false
+      ? { FLAKINESS_ACCESS_TOKEN: 'fake-token', FLAKINESS_ENDPOINT: durationsServer.endpoint }
+      : undefined;
 
-  const result = await runFlakinessPlaywrightTimings(targetDir, extraEnv, args);
-  const timings = fs.existsSync(timingsFile)
-    ? JSON.parse(fs.readFileSync(timingsFile, 'utf-8')) as FlakinessReport.Report
-    : undefined;
-  return { ...result, timings };
+    const result = await runFlakinessPlaywrightTimings(targetDir, extraEnv, args);
+    const timings = fs.existsSync(timingsFile)
+      ? JSON.parse(fs.readFileSync(timingsFile, 'utf-8')) as FlakinessReport.Report
+      : undefined;
+    return { ...result, timings };
+  } finally {
+    durationsServer[Symbol.dispose]();
+  }
 }
 
 function reportTotalWeight(report: FlakinessReport.Report): number {

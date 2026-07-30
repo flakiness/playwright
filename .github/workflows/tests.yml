@@ -22,11 +22,9 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
-
-      - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
-          cache: pnpm
+          standalone: true
+          cache: true
 
       # Since tests initialize git repositories, we have
       # to configure git to avoid warnings.
