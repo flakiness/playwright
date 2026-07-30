@@ -5,8 +5,8 @@ Custom Playwright Test reporter that emits Flakiness.io reports. Single class in
 ## Toolchain
 
 - **pnpm** (not npm/yarn). Use `pnpm install`, `pnpm build`, `pnpm test`.
-- Node 22+, Playwright 1.57+ (balanced sharding needs 1.62+ — the `Reporter.preprocess` API).
-- Build: Kubik + esbuild (`build.mts`) → ESM, `node22` target, `bundle: false`, then `tsc` for `.d.ts`.
+- Node 20.17+ or 22.9+, Playwright 1.57+ (balanced sharding needs 1.62+ — the `Reporter.preprocess` API).
+- Build: Kubik + esbuild (`build.mts`) → ESM, `node20` target, bundled runtime dependencies, then `tsc` for `.d.ts`.
 
 ## Invariants — do not break
 

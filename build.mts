@@ -1,4 +1,4 @@
-#!/usr/bin/env npx kubik
+#!/usr/bin/env pnpm build
 
 import esbuild from 'esbuild';
 import fs from 'fs';
@@ -25,7 +25,7 @@ const { errors } = await esbuild.build({
   outdir: outDir,
   format: 'esm',
   platform: 'node',
-  target: ['node22'],
+  target: ['node20'],
   sourcemap: true,
   // Bundle all prod dependencies (zod in particular) so the published
   // package has zero runtime dependencies besides Playwright itself.
