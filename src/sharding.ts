@@ -45,6 +45,10 @@ type Shard = {
   deps: Set<string>,
 };
 
+function missingSetup(shard: Shard, family: Family): number {
+  return Array.from(family.deps).reduce((acc, [name, weight]) => acc + (shard.deps.has(name) ? 0 : weight), 0);
+}
+
 /**
  * Definitions:
  * 1. The task is to split work across N shards.
@@ -69,13 +73,13 @@ type Shard = {
  * that the makespan lower bound is as low as possible, for the current shard allocation.
 
  * The makespan lower bound is defined like this:
- * - makespan >= family.work / K + family.setup + (minimal shard load)
+ * - makespan >= family.work / K + family.setup
  *   Makespan is AT LEAST the chunk of work + a family setup. We might have a shard that
  *   has only this chunk of a family
- * - makespan >= (total + (K-1) * family.setup) / N
- *   Makespan is AT LEAST the absolute perfect balancing of job (only happens when all
- *   other dependencies are counted once, this family setup is counted once per spanned
- *   shard, and work is rationally divisible).
+ * - makespan >= (total + minMissingSetup(K) - unseenSetup) / N
+ *   Makespan is AT LEAST the absolute perfect balancing of the job. `minMissingSetup(K)`
+ *   is the setup missing from the K cheapest host shards, while `unseenSetup` is the
+ *   family setup that has not run anywhere and is therefore already counted once in `total`.
  *   `total` is a running shard total + remaining work, where remaining work assumes that
  *   every dependency that hasn't been executed will be executed once, and all the work will
  *   be distributed perfectly.
@@ -125,8 +129,7 @@ function balanceShards(entries: ShardGroup[], N: number): Shard[] {
     // Run LPT across the selected shards.
     for (const group of heaviest.groups.toSorted((g1, g2) => g2.work - g1.work)) {
       for (const shard of selectedShards) {
-        const missingSetup = Array.from(heaviest.deps).reduce((acc, [name, weight]) => acc + (shard.deps.has(name) ? 0 : weight), 0);
-        shard.score = shard.total + missingSetup + group.work;
+        shard.score = shard.total + missingSetup(shard, heaviest) + group.work;
       }
       const bestShard = selectedShards.sort((s1, s2) => s1.score - s2.score)[0];
       bestShard.groups.push(group);
@@ -156,12 +159,21 @@ function estimateTotalWork(shards: Shard[], families: Family[]): number {
 
 function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: number) {
   const total = estimateTotalWork(shards, [...families, heaviest]);
+  const missingSetups = shards.map(shard => missingSetup(shard, heaviest)).sort((a, b) => a - b);
+  const unseenSetup = Array.from(heaviest.deps).reduce((acc, [name, weight]) => {
+    return acc + (shards.some(shard => shard.deps.has(name)) ? 0 : weight);
+  }, 0);
 
   let minMakeSpan = Infinity;
   let minK = -1;
+  // `total` already reserves one copy of every globally unseen dependency.
+  // Add the setup missing from the K cheapest hosts, then subtract the
+  // reserved copy once to avoid double-counting it.
+  let minMissingSetup = 0;
   for (let k = 1; k <= Math.min(N, heaviest.groups.length); ++k) {
+    minMissingSetup += missingSetups[k - 1];
     const localMakespan = heaviest.setup + heaviest.work / k;
-    const avgMakespan = (total + (k - 1) * heaviest.setup) / N;
+    const avgMakespan = (total + minMissingSetup - unseenSetup) / N;
     const atLeast = Math.max(avgMakespan, localMakespan);
     if (atLeast <= minMakeSpan) {
       minMakeSpan = atLeast;
@@ -175,9 +187,9 @@ function selectShards(shards: Shard[], families: Family[], heaviest: Family, N: 
   const totalWithoutHeaviest = estimateTotalWork(shards, families);
 
   for (const shard of shards) {
-    const missingSetup = Array.from(heaviest.deps).reduce((acc, [name, weight]) => acc + (shard.deps.has(name) ? 0 : weight), 0);
-    const localMakespan = shard.total + missingSetup + heaviest.work / K;
-    const avgMakespan = (totalWithoutHeaviest + missingSetup + (K - 1) * heaviest.setup + heaviest.work) / N;
+    const shardMissingSetup = missingSetup(shard, heaviest);
+    const localMakespan = shard.total + shardMissingSetup + heaviest.work / K;
+    const avgMakespan = (totalWithoutHeaviest + shardMissingSetup + (K - 1) * heaviest.setup + heaviest.work) / N;
     shard.score = Math.max(localMakespan, avgMakespan);
   }
   return shards.toSorted((s1, s2) => s1.score - s2.score).slice(0, K);
