@@ -41,12 +41,18 @@ type Family = {
 type Shard = {
   groups: ShardGroup[],
   total: number,
-  score: number, // used later to store shard score when picking distribution.
+  score: number, // Scratch value used when comparing shard candidates.
   deps: Set<string>,
 };
 
 function missingSetup(shard: Shard, family: Family): number {
   return Array.from(family.deps).reduce((acc, [name, weight]) => acc + (shard.deps.has(name) ? 0 : weight), 0);
+}
+
+function unseenSetup(shards: Shard[], family: Family): number {
+  return Array.from(family.deps).reduce((acc, [name, weight]) => {
+    return acc + (shards.some(shard => shard.deps.has(name)) ? 0 : weight);
+  }, 0);
 }
 
 /**
@@ -84,11 +90,9 @@ function missingSetup(shard: Shard, family: Family): number {
  *   every dependency that hasn't been executed will be executed once, and all the work will
  *   be distributed perfectly.
  *   
- * Now, once we know a minimal K, we can estimate makespan for each shard:
- * - makespan >= shard.load + missing_setup + family.work / K
- *   The makespan is no less than the current shard load + all the extra it'll take
- * - makespan >= (all_shard_loads + missing_setup + all_remaining_work) / N
- *   This is the best average we could hope for.
+ * Once we know K, estimate the makespan lower bound for every candidate host.
+ * The global estimate assumes that the other K - 1 hosts have the cheapest
+ * missing setup available. Pick the K candidates with the lowest estimates.
  * 
  * Finally, we can use basic LPT to balance project work across selected shards.
  */
@@ -128,10 +132,9 @@ function balanceShards(entries: ShardGroup[], N: number): Shard[] {
 
     // Run LPT across the selected shards.
     for (const group of heaviest.groups.toSorted((g1, g2) => g2.work - g1.work)) {
-      for (const shard of selectedShards) {
+      for (const shard of selectedShards)
         shard.score = shard.total + missingSetup(shard, heaviest) + group.work;
-      }
-      const bestShard = selectedShards.sort((s1, s2) => s1.score - s2.score)[0];
+      const bestShard = selectedShards.sort((a, b) => a.score - b.score)[0];
       bestShard.groups.push(group);
       bestShard.total = bestShard.score;
       for (const name of group.deps.keys())
@@ -160,9 +163,7 @@ function estimateTotalWork(shards: Shard[], families: Family[]): number {
 function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: number) {
   const total = estimateTotalWork(shards, [...families, heaviest]);
   const missingSetups = shards.map(shard => missingSetup(shard, heaviest)).sort((a, b) => a - b);
-  const unseenSetup = Array.from(heaviest.deps).reduce((acc, [name, weight]) => {
-    return acc + (shards.some(shard => shard.deps.has(name)) ? 0 : weight);
-  }, 0);
+  const unseen = unseenSetup(shards, heaviest);
 
   let minMakeSpan = Infinity;
   let minK = -1;
@@ -173,7 +174,7 @@ function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: n
   for (let k = 1; k <= Math.min(N, heaviest.groups.length); ++k) {
     minMissingSetup += missingSetups[k - 1];
     const localMakespan = heaviest.setup + heaviest.work / k;
-    const avgMakespan = (total + minMissingSetup - unseenSetup) / N;
+    const avgMakespan = (total + minMissingSetup - unseen) / N;
     const atLeast = Math.max(avgMakespan, localMakespan);
     if (atLeast <= minMakeSpan) {
       minMakeSpan = atLeast;
@@ -183,16 +184,26 @@ function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: n
   return minK;
 }
 
-function selectShards(shards: Shard[], families: Family[], heaviest: Family, N: number, K: number): Shard[] {
-  const totalWithoutHeaviest = estimateTotalWork(shards, families);
+function selectShards(shards: Shard[], families: Family[], family: Family, N: number, K: number): Shard[] {
+  const total = estimateTotalWork(shards, [...families, family]);
+  const unseen = unseenSetup(shards, family);
+  const missingSetups = shards.map((shard, index) => ({
+    index,
+    value: missingSetup(shard, family),
+  })).toSorted((a, b) => a.value - b.value);
+  const cheapestK = new Set(missingSetups.slice(0, K).map(({ index }) => index));
+  const cheapestKTotal = missingSetups.slice(0, K).reduce((acc, { value }) => acc + value, 0);
+  const cheapestKMinusOneTotal = missingSetups.slice(0, K - 1).reduce((acc, { value }) => acc + value, 0);
 
-  for (const shard of shards) {
-    const shardMissingSetup = missingSetup(shard, heaviest);
-    const localMakespan = shard.total + shardMissingSetup + heaviest.work / K;
-    const avgMakespan = (totalWithoutHeaviest + shardMissingSetup + (K - 1) * heaviest.setup + heaviest.work) / N;
+  for (let index = 0; index < shards.length; ++index) {
+    const shard = shards[index];
+    const shardMissingSetup = missingSetup(shard, family);
+    const minOtherMissingSetup = cheapestK.has(index) ? cheapestKTotal - shardMissingSetup : cheapestKMinusOneTotal;
+    const localMakespan = shard.total + shardMissingSetup + family.work / K;
+    const avgMakespan = (total + shardMissingSetup + minOtherMissingSetup - unseen) / N;
     shard.score = Math.max(localMakespan, avgMakespan);
   }
-  return shards.toSorted((s1, s2) => s1.score - s2.score).slice(0, K);
+  return shards.toSorted((a, b) => a.score - b.score).slice(0, K);
 }
 
 function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
