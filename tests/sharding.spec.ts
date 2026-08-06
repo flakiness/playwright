@@ -478,6 +478,47 @@ test('should prefer shards that already run shared dependency projects', async (
   expect(shards.map(shard => reportTestCount(shard.report))).toEqual([4, 100]);
 });
 
+test('should reuse setup already paid on every shard when deciding family span', async ({}, testInfo) => {
+  const shards = await runBalancedShards(testInfo, {
+    'shared-setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=100 shared setup', async () => {});
+    `,
+    'extra-setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=1 extra setup', async () => {});
+    `,
+    'wide.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=900 wide alpha', async () => {});
+      test('w=900 wide beta', async () => {});
+    `,
+    'shared.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=899 shared alpha', async () => {});
+      test('w=899 shared beta', async () => {});
+    `,
+  }, 2, {}, {
+    fullyParallel: true,
+    projects: [
+      { name: 'shared-setup', testMatch: 'shared-setup.spec.ts' },
+      { name: 'extra-setup', testMatch: 'extra-setup.spec.ts' },
+      { name: 'wide', testMatch: 'wide.spec.ts', dependencies: ['shared-setup', 'extra-setup'] },
+      { name: 'shared', testMatch: 'shared.spec.ts', dependencies: ['shared-setup'] },
+    ],
+  });
+
+  // The wider dependency family runs first and puts both setup projects on
+  // both shards: 100 + 1 + 900 = 1001 each. The shared-only family can then
+  // span both shards without paying setup again, producing 1001 + 899 = 1900.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([1900, 1900]);
+  expect(shards.map(shard => reportTestCount(shard.report))).toEqual([4, 4]);
+});
+
 test('should account only for missing setup when deciding family span', async ({}, testInfo) => {
   const shards = await runBalancedShards(testInfo, {
     'setup-a.spec.ts': `
