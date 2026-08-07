@@ -90,9 +90,8 @@ function unseenSetup(shards: Shard[], family: Family): number {
  *   every dependency that hasn't been executed will be executed once, and all the work will
  *   be distributed perfectly.
  *   
- * Once we know K, estimate the makespan lower bound for every candidate host.
- * The global estimate assumes that the other K - 1 hosts have the cheapest
- * missing setup available. Pick the K candidates with the lowest estimates.
+ * Once we know K, select its hosts greedily. After each host is selected, its
+ * missing setup becomes part of every remaining candidate's estimate.
  * 
  * Finally, we can use basic LPT to balance project work across selected shards.
  */
@@ -187,23 +186,34 @@ function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: n
 function selectShards(shards: Shard[], families: Family[], family: Family, N: number, K: number): Shard[] {
   const total = estimateTotalWork(shards, [...families, family]);
   const unseen = unseenSetup(shards, family);
-  const missingSetups = shards.map((shard, index) => ({
-    index,
-    value: missingSetup(shard, family),
-  })).toSorted((a, b) => a.value - b.value);
-  const cheapestK = new Set(missingSetups.slice(0, K).map(({ index }) => index));
-  const cheapestKTotal = missingSetups.slice(0, K).reduce((acc, { value }) => acc + value, 0);
-  const cheapestKMinusOneTotal = missingSetups.slice(0, K - 1).reduce((acc, { value }) => acc + value, 0);
+  const candidates = shards.map(shard => ({
+    shard,
+    missing: missingSetup(shard, family),
+    score: 0,
+  }));
+  const selected: Shard[] = [];
+  let selectedMissingSetup = 0;
 
-  for (let index = 0; index < shards.length; ++index) {
-    const shard = shards[index];
-    const shardMissingSetup = missingSetup(shard, family);
-    const minOtherMissingSetup = cheapestK.has(index) ? cheapestKTotal - shardMissingSetup : cheapestKMinusOneTotal;
-    const localMakespan = shard.total + shardMissingSetup + family.work / K;
-    const avgMakespan = (total + shardMissingSetup + minOtherMissingSetup - unseen) / N;
-    shard.score = Math.max(localMakespan, avgMakespan);
+  while (selected.length < K) {
+    const remainingHostCount = K - selected.length;
+    candidates.sort((a, b) => a.missing - b.missing);
+    const optimisticHosts = candidates.slice(0, remainingHostCount);
+    const optimisticHostSet = new Set(optimisticHosts);
+    const optimisticSetup = optimisticHosts.reduce((acc, candidate) => acc + candidate.missing, 0);
+    const optimisticSetupWithoutMostExpensive = optimisticSetup - optimisticHosts.at(-1)!.missing;
+
+    for (const candidate of candidates) {
+      const localMakespan = candidate.shard.total + candidate.missing + family.work / K;
+      const remainingMissingSetup = optimisticHostSet.has(candidate) ? optimisticSetup : optimisticSetupWithoutMostExpensive + candidate.missing;
+      const avgMakespan = (total + selectedMissingSetup + remainingMissingSetup - unseen) / N;
+      candidate.score = Math.max(localMakespan, avgMakespan);
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    const best = candidates.shift()!;
+    selected.push(best.shard);
+    selectedMissingSetup += best.missing;
   }
-  return shards.toSorted((a, b) => a.score - b.score).slice(0, K);
+  return selected;
 }
 
 function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
