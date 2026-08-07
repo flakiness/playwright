@@ -5,7 +5,7 @@ import type {
 
 type ShardSlot = { current: number, total: number };
 
-type ShardGroup = {
+type TestGroup = {
   tests: TestCase[],
   work: number,
   deps: Map<string, number>,
@@ -23,8 +23,8 @@ export type BalancedShard = {
 };
 
 export function allocateBalancedShards(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>, shardsCount: number): BalancedShard[] {
-  const shardGroups = prepareShardableTestEntries(config, rootSuite, durationPredictions);
-  const shards = balanceShards(shardGroups, shardsCount);
+  const testGroups = prepareTestGroups(config, rootSuite, durationPredictions);
+  const shards = balanceShards(testGroups, shardsCount);
   return shards.map(shard => ({
     tests: shard.groups.map(group => group.tests).flat(),
     work: shard.total,
@@ -32,14 +32,14 @@ export function allocateBalancedShards(config: FullConfig, rootSuite: Suite, dur
 }
 
 type Family = {
-  groups: ShardGroup[],
+  groups: TestGroup[],
   work: number, // Summary of all group's work in the family
   deps: Map<string, number>,
   setup: number,
 };
 
 type Shard = {
-  groups: ShardGroup[],
+  groups: TestGroup[],
   total: number,
   score: number, // Scratch value used when comparing shard candidates.
   deps: Set<string>,
@@ -59,13 +59,13 @@ function unseenSetup(shards: Shard[], family: Family): number {
  * Definitions:
  * 1. The task is to split work across N shards.
  * 2. `makespan` is a wall time to execute all work, across all shards.
- * 3. `ShardGroup` is an indivisible unit of work. In Playwright Test, these are generally single
+ * 3. `TestGroup` is an indivisible unit of work. In Playwright Test, these are generally single
  *    tests or series of serial tests.
- * 4. `Family` is a set of shard groups with the same dependency closure. In Playwright Test world,
+ * 4. `Family` is a set of test groups with the same dependency closure. In Playwright Test world,
  *    different projects might have the same set of dependencies - both "setup" and "teardown".
  *    They'll end up in the same "family".
  * 5. Each family has a `setup` and `work`: the `setup` is a combined price for all dependencies, and `work`
- *    is a combined price of all shard groups.
+ *    is a combined price of all test groups.
  * 
  * Main ideas:
  * 1. This is a heuristic algorithm: the strategy is to allocate families
@@ -95,24 +95,24 @@ function unseenSetup(shards: Shard[], family: Family): number {
  * 
  * Finally, we can use basic LPT to balance project work across selected shards.
  */
-function balanceShards(entries: ShardGroup[], N: number): Shard[] {
-  // 1. All shard groups with the same dependencies are unified into a single "family".
+function balanceShards(testGroups: TestGroup[], N: number): Shard[] {
+  // 1. All test groups with the same dependencies are unified into a single "family".
   // In practice, each family is a node in the dependency tree.
   const familiesMap = new Map<string, Family>();
-  for (const entry of entries) {
-    const familyId = JSON.stringify(Array.from(entry.deps.keys()).sort((a, b) => a < b ? -1 : 1));
+  for (const testGroup of testGroups) {
+    const familyId = JSON.stringify(Array.from(testGroup.deps.keys()).sort((a, b) => a < b ? -1 : 1));
     let family = familiesMap.get(familyId);
     if (!family) {
       family = {
         groups: [],
         work: 0,
-        setup: Array.from(entry.deps).reduce((acc, [name, weight]) => acc + weight, 0),
-        deps: entry.deps,
+        setup: Array.from(testGroup.deps).reduce((acc, [name, weight]) => acc + weight, 0),
+        deps: testGroup.deps,
       };
       familiesMap.set(familyId, family);
     }
-    family.groups.push(entry);
-    family.work += entry.work;
+    family.groups.push(testGroup);
+    family.work += testGroup.work;
   }
   const families = Array.from(familiesMap.values()).sort((f1, f2) => f1.setup - f2.setup);
 
@@ -225,7 +225,7 @@ function setDifference<T>(set: Set<T>, other: Set<T>): Set<T> {
   return result;
 }
 
-function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>) {
+function prepareTestGroups(config: FullConfig, rootSuite: Suite, durationPredictions: Map<TestCase, number>) {
   // We consider both dependencies and teardown as "dependencies".
   const scheduledProjects = new Set(rootSuite.allTests().map(test => test.parent.project()).filter(x => x !== undefined));
   const projectDependencies = new Map<string, string[]>(Array.from(scheduledProjects).map(project => [project.name, [
@@ -259,39 +259,39 @@ function prepareShardableTestEntries(config: FullConfig, rootSuite: Suite, durat
     projectDurations.set(project.name, (projectDurations.get(project.name) ?? 0) + (durationPredictions.get(testCase) ?? DEFAULT_DURATION));
   }
 
-  // Group all tests into shard groups. Each shard group is identified either by
+  // Group all tests into test groups. Each test group is identified either by
   // a suite (an outermost serial suite), or a testCaseId (if tests are executed with repeat-each).
-  type ShardGroupId = Suite|TestCase;
-  const shardGroups = new Map<ShardGroupId, ShardGroup>();
+  type TestGroupId = Suite|TestCase;
+  const testGroups = new Map<TestGroupId, TestGroup>();
 
   for (const testCase of leafTests) {
     const proj = testCase.parent.project();
     if (!proj)
       continue;
 
-    const shardGroupId = computeShardSuite(testCase) ?? testCase;
-    let shardGroup = shardGroups.get(shardGroupId);
-    if (!shardGroup) {
-      shardGroup = {
+    const testGroupId = computeTestGroupSuite(testCase) ?? testCase;
+    let testGroup = testGroups.get(testGroupId);
+    if (!testGroup) {
+      testGroup = {
         deps: new Map(),
         work: 0,
         tests: [],
       }
-      shardGroups.set(shardGroupId, shardGroup);
+      testGroups.set(testGroupId, testGroup);
     }
-    shardGroup.tests.push(testCase);
-    shardGroup.work += durationPredictions.get(testCase) ?? DEFAULT_DURATION;
+    testGroup.tests.push(testCase);
+    testGroup.work += durationPredictions.get(testCase) ?? DEFAULT_DURATION;
     for (const dep of leafProjectClosure.get(proj.name) ?? [])
-      shardGroup.deps.set(dep, projectDurations.get(dep) ?? 0);
+      testGroup.deps.set(dep, projectDurations.get(dep) ?? 0);
   }
-  return Array.from(shardGroups.values());
+  return Array.from(testGroups.values());
 }
 
 // Playwright does not expose suite mode in reporter types, but native sharding
 // uses this runtime field to detect proper sharding mode.
 type SuiteWithParallelMode = Suite & { _parallelMode?: string };
 
-function computeShardSuite(testCase: TestCase): Suite|undefined {
+function computeTestGroupSuite(testCase: TestCase): Suite|undefined {
   let outermostSequential: Suite | undefined;
   let insideParallel = false;
   let fileSuite: Suite | undefined;

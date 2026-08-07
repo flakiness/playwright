@@ -93,7 +93,7 @@ test('should keep tests from serial suites in one shard', async ({}, testInfo) =
 
   // All serial tests should end up in the same shard.
   expect(shards.map(shard => shard.totalWeight)).toEqual([28, 0]);
-  // Make sure tests inside shard groups retain their order.
+  // Make sure tests inside test groups retain their order.
   expect(reportTestTitles(shards[0].report)).toEqual([
     'w=7 alpha',
     'w=1 beta',
@@ -397,7 +397,7 @@ test('should not split one atomic dependent group across extra shards', async ({
     ],
   });
 
-  // The serial suite is one shard group, so it can occupy only one shard:
+  // The serial suite is one test group, so it can occupy only one shard:
   // setup + 10 app tests = 110, with unit tests filling the other two shards.
   expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([100, 100, 110]);
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([11, 100, 100]);
@@ -728,7 +728,7 @@ test('should not split a non-fully-parallel spec file across shards', async ({},
   }, 2);
 
   // Without fullyParallel, Playwright runs a file's tests in order on one worker,
-  // so the whole file is one indivisible shard group and lands entirely on one shard.
+  // so the whole file is one indivisible test group and lands entirely on one shard.
   expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([0, 40]);
   expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([0, 4]);
 });
