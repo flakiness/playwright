@@ -519,6 +519,98 @@ test('should reuse setup already paid on every shard when deciding family span',
   expect(shards.map(shard => reportTestCount(shard.report))).toEqual([4, 4]);
 });
 
+test('should reuse setup on other candidate hosts when selecting shards', async ({}, testInfo) => {
+  const shards = await runBalancedShards(testInfo, {
+    'shared-setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=99 shared setup', async () => {});
+    `,
+    'extra-setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=1 extra setup', async () => {});
+    `,
+    'wide.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=21 wide high', async () => {});
+      test('w=1 wide low', async () => {});
+    `,
+    'shared.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=20 shared alpha', async () => {});
+      test('w=20 shared beta', async () => {});
+    `,
+  }, 3, {}, {
+    fullyParallel: true,
+    projects: [
+      { name: 'shared-setup', testMatch: 'shared-setup.spec.ts' },
+      { name: 'extra-setup', testMatch: 'extra-setup.spec.ts' },
+      { name: 'wide', testMatch: 'wide.spec.ts', dependencies: ['shared-setup', 'extra-setup'] },
+      { name: 'shared', testMatch: 'shared.spec.ts', dependencies: ['shared-setup'] },
+    ],
+  });
+
+  // The wider dependency family runs first and leaves two warm shards at
+  // 100 + 21 = 121 and 100 + 1 = 101. The shared-only family then spans two
+  // shards. Pairing the 101 shard with the fresh shard costs one new 99 setup,
+  // but balances all three shards better than selecting both warm shards.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([119, 121, 121]);
+  expect(shards.map(shard => reportTestCount(shard.report)).sort((a, b) => a - b)).toEqual([2, 3, 4]);
+});
+
+test('should keep co-host setup assumptions consistent while selecting shards', async ({}, testInfo) => {
+  const shards = await runBalancedShards(testInfo, {
+    'shared-setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=50 shared setup', async () => {});
+    `,
+    'extra-setup.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=1 extra setup', async () => {});
+    `,
+    'wide.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=79 wide', async () => {});
+    `,
+    'shared.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=80 shared alpha', async () => {});
+      test('w=80 shared beta', async () => {});
+    `,
+    'independent.spec.ts': `
+      import { test } from '@playwright/test';
+
+      for (let i = 0; i < 280; ++i)
+        test('w=1 independent-' + i, async () => {});
+    `,
+  }, 3, {}, {
+    fullyParallel: true,
+    projects: [
+      { name: 'shared-setup', testMatch: 'shared-setup.spec.ts' },
+      { name: 'extra-setup', testMatch: 'extra-setup.spec.ts' },
+      { name: 'wide', testMatch: 'wide.spec.ts', dependencies: ['shared-setup', 'extra-setup'] },
+      { name: 'shared', testMatch: 'shared.spec.ts', dependencies: ['shared-setup'] },
+      { name: 'independent', testMatch: 'independent.spec.ts' },
+    ],
+  });
+
+  // The wider family first leaves one warm shard at 50 + 1 + 79 = 130.
+  // The shared family then spans two shards. Both fresh shards individually
+  // assume the warm shard will be their co-host; selecting both would violate
+  // both assumptions and pay two new copies of the 50 setup. Selecting the
+  // warm shard and one fresh shard pays only one new copy, leaving less total
+  // work for the independent family to balance.
+  expect(shards.map(shard => shard.totalWeight).sort((a, b) => a - b)).toEqual([205, 205, 210]);
+  expect(shards.reduce((acc, shard) => acc + reportTestCount(shard.report), 0)).toBe(286);
+});
+
 test('should account only for missing setup when deciding family span', async ({}, testInfo) => {
   const shards = await runBalancedShards(testInfo, {
     'setup-a.spec.ts': `
