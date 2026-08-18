@@ -56,6 +56,9 @@ function unseenSetup(shards: Shard[], family: Family): number {
 }
 
 /**
+ * SALT (Setup-Aware LPT) is explained in detail at:
+ * https://blog.flakiness.io/posts/2026/salt/
+ *
  * Definitions:
  * 1. The task is to split work across N shards.
  * 2. `makespan` is a wall time to execute all work, across all shards.

@@ -81,7 +81,12 @@ npx flakiness show ./flakiness-report
 
 Playwright's native `--shard` splits work by *count*, knowing nothing about how long each one takes. A shard that happens to collect the slow tests becomes the long pole of the whole CI run, while the other shards sit finished and idle.
 
-The reporter's `shardBalancing` option replaces Playwright's native splitting with one driven by **test duration hints**: tests are packed into shards by expected runtime, so every shard finishes at roughly the same time. Configure it once:
+The reporter's `shardBalancing` option replaces Playwright's native splitting with one driven by **test duration hints**: tests are packed into shards by expected runtime, so every shard finishes at roughly the same time.
+
+> [!NOTE]
+> **How balancing works:** The algorithm is **SALT** (Setup-Aware LPT). Read [SALT: Efficient Shard Balancing for Playwright](https://blog.flakiness.io/posts/2026/salt/) for a detailed explanation of how it accounts for test groups and project setup costs.
+
+Configure it once:
 
 ```typescript
 export default defineConfig({
