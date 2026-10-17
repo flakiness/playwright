@@ -156,14 +156,29 @@ async function toFKSuites(context: ProcessingContext, pwSuite: Suite, parentFKSu
   return [suite];
 }
 
+// Tests might get results even if they did not run to completion.
+// Playwright ignores such results when it computes a test outcome, so we do not report them either.
+function isExecutionResult(pwTest: TestCase, result: TestResult) {
+  // A test that was interrupted in-flight gets the "interrupted" status.
+  if (result.status === 'interrupted')
+    return false;
+  // A test that was skipped without calling `test.skip()` did not run: e.g. it is a part
+  // of a `.serial` suite where an earlier test failed.
+  if (result.status === 'skipped' && pwTest.expectedStatus !== 'skipped')
+    return false;
+  return true;
+}
+
 async function toFKTest(context: ProcessingContext, pwTest: TestCase, parentFKSuites: FK.Suite[]): Promise<FK.Test> {
+  const results = Array.from(context.results.get(pwTest) ?? new Set<TestResult>())
+      .filter(result => isExecutionResult(pwTest, result));
   const test: FK.Test = {
     title: pwTest.title,
     // Playwright Test tags must start with '@' so we cut it off.
     tags: pwTest.tags.map(tag => tag.startsWith('@') ? tag.substring(1) : tag),
     location: createLocation(context, pwTest.location),
     // de-duplication of tests will happen later, so here we will have all attempts.
-    attempts: await Promise.all(Array.from(context.results.get(pwTest) ?? new Set<TestResult>()).map(result => toFKRunAttempt(context, pwTest, result))),
+    attempts: await Promise.all(results.map(result => toFKRunAttempt(context, pwTest, result))),
   };
 
   const fkTestId = computeFKTestId(test, parentFKSuites);
