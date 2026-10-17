@@ -156,18 +156,24 @@ async function toFKSuites(context: ProcessingContext, pwSuite: Suite, parentFKSu
   return [suite];
 }
 
-// A test skipped without calling test.skip() did not run: for example, a test in a
-// serial suite after an earlier test failed. Playwright still reports a "skipped" result
-// for it, but tells it apart from an explicit skip by `expectedStatus`.
-function didNotRun(pwTest: TestCase, result: TestResult) {
-  return result.status === 'skipped' && pwTest.expectedStatus !== 'skipped';
+// Tests might get results even if they were not executed.
+// We want to filter out such results.
+function isExecutionResult(pwTest: TestCase, result: TestResult) {
+  // A test that was interrupted in-flight gets the "interrupted" status. We don't want to report these.
+  if (result.status === 'interrupted')
+    return false;
+  // Filter out tests that were skipped because they were a part of a `.serial` suite
+  // that was aborted due to early failure,
+  if (result.status === 'skipped' && pwTest.expectedStatus !== 'skipped')
+    return false;
+  return true;
 }
 
 async function toFKTest(context: ProcessingContext, pwTest: TestCase, parentFKSuites: FK.Suite[]): Promise<FK.Test> {
   // Playwright ignores results of tests that did not run and interrupted results
   // when it computes a test outcome, so we do not report them either.
   const results = Array.from(context.results.get(pwTest) ?? new Set<TestResult>())
-      .filter(result => !didNotRun(pwTest, result) && result.status !== 'interrupted');
+      .filter(result => isExecutionResult(pwTest, result));
   const test: FK.Test = {
     title: pwTest.title,
     // Playwright Test tags must start with '@' so we cut it off.
