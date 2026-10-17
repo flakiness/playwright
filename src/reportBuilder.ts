@@ -156,22 +156,20 @@ async function toFKSuites(context: ProcessingContext, pwSuite: Suite, parentFKSu
   return [suite];
 }
 
-// Tests might get results even if they were not executed.
-// We want to filter out such results.
+// Tests might get results even if they did not run to completion.
+// Playwright ignores such results when it computes a test outcome, so we do not report them either.
 function isExecutionResult(pwTest: TestCase, result: TestResult) {
-  // A test that was interrupted in-flight gets the "interrupted" status. We don't want to report these.
+  // A test that was interrupted in-flight gets the "interrupted" status.
   if (result.status === 'interrupted')
     return false;
-  // Filter out tests that were skipped because they were a part of a `.serial` suite
-  // that was aborted due to early failure,
+  // A test that was skipped without calling `test.skip()` did not run: e.g. it is a part
+  // of a `.serial` suite where an earlier test failed.
   if (result.status === 'skipped' && pwTest.expectedStatus !== 'skipped')
     return false;
   return true;
 }
 
 async function toFKTest(context: ProcessingContext, pwTest: TestCase, parentFKSuites: FK.Suite[]): Promise<FK.Test> {
-  // Playwright ignores results of tests that did not run and interrupted results
-  // when it computes a test outcome, so we do not report them either.
   const results = Array.from(context.results.get(pwTest) ?? new Set<TestResult>())
       .filter(result => isExecutionResult(pwTest, result));
   const test: FK.Test = {
