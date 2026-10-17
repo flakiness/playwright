@@ -81,6 +81,7 @@ test('should keep explicit skips on retry', async ({}, testInfo) => {
 });
 
 test('should drop interrupted attempts', async ({}, testInfo) => {
+  test.skip(process.platform === 'win32', 'process.kill() cannot deliver SIGINT on Windows');
   const { report } = await generateFlakinessReport(testInfo, {
     'smoke.spec.ts': `
       import { test, expect } from '@playwright/test';
