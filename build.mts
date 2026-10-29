@@ -26,7 +26,7 @@ const { errors } = await esbuild.build({
   format: 'esm',
   platform: 'node',
   target: ['node20'],
-  sourcemap: true,
+  sourcemap: false,
   // Bundle all prod dependencies (zod in particular) so the published
   // package has zero runtime dependencies besides Playwright itself.
   bundle: true,
