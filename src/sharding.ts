@@ -82,9 +82,11 @@ function unseenSetup(shards: Shard[], family: Family): number {
  * that the makespan lower bound is as low as possible, for the current shard allocation.
 
  * The makespan lower bound is defined like this:
- * - makespan >= family.work / K + family.setup
- *   Makespan is AT LEAST the chunk of work + a family setup. We might have a shard that
- *   has only this chunk of a family
+ * - makespan >= max(load(K), (load(1) + ... + load(K) + family.work) / K)
+ *   Makespan is AT LEAST the most loaded host's total. `load(i)` is the i-th least
+ *   loaded shard's total plus the family setup it still misses. Any K hosts include
+ *   one with at least `load(K)`, and together they carry at least `load(1) + ... + load(K)`
+ *   plus the family's work, so one of them gets at least the average.
  * - makespan >= (total + minMissingSetup(K) - unseenSetup) / N
  *   Makespan is AT LEAST the absolute perfect balancing of the job. `minMissingSetup(K)`
  *   is the setup missing from the K cheapest host shards, while `unseenSetup` is the
@@ -165,6 +167,8 @@ function estimateTotalWork(shards: Shard[], families: Family[]): number {
 function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: number) {
   const total = estimateTotalWork(shards, [...families, heaviest]);
   const missingSetups = shards.map(shard => missingSetup(shard, heaviest)).sort((a, b) => a - b);
+  // `load(i)` from the SALT comment, sorted from least to most loaded.
+  const hostLoads = shards.map(shard => shard.total + missingSetup(shard, heaviest)).sort((a, b) => a - b);
   const unseen = unseenSetup(shards, heaviest);
 
   let minMakeSpan = Infinity;
@@ -173,9 +177,11 @@ function computeSpan(shards: Shard[], families: Family[], heaviest: Family, N: n
   // Add the setup missing from the K cheapest hosts, then subtract the
   // reserved copy once to avoid double-counting it.
   let minMissingSetup = 0;
+  let hostLoad = 0;
   for (let k = 1; k <= Math.min(N, heaviest.groups.length); ++k) {
     minMissingSetup += missingSetups[k - 1];
-    const localMakespan = heaviest.setup + heaviest.work / k;
+    hostLoad += hostLoads[k - 1];
+    const localMakespan = Math.max(hostLoads[k - 1], (hostLoad + heaviest.work) / k);
     const avgMakespan = (total + minMissingSetup - unseen) / N;
     const atLeast = Math.max(avgMakespan, localMakespan);
     if (atLeast <= minMakeSpan) {
