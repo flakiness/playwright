@@ -1,6 +1,6 @@
 {
   "name": "@flakiness/playwright",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "packageManager": "pnpm@11.5.0",
   "private": false,
   "repository": {
