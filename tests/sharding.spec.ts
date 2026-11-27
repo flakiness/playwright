@@ -677,6 +677,46 @@ test('should account only for missing setup when deciding family span', async ({
   ]);
 });
 
+test('should account for work already on shards when deciding family span', async ({}, testInfo) => {
+  const shards = await runBalancedShards(testInfo, {
+    'setup-a.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=10 setup A', async () => {});
+    `,
+    'setup-b.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=1 setup B', async () => {});
+    `,
+    'a.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=100 a alpha', async () => {});
+      test('w=100 a beta', async () => {});
+    `,
+    'b.spec.ts': `
+      import { test } from '@playwright/test';
+
+      test('w=50 b alpha', async () => {});
+      test('w=50 b beta', async () => {});
+    `,
+  }, 2, {}, {
+    fullyParallel: true,
+    projects: [
+      { name: 'setup-a', testMatch: 'setup-a.spec.ts' },
+      { name: 'setup-b', testMatch: 'setup-b.spec.ts' },
+      { name: 'a', testMatch: 'a.spec.ts', dependencies: ['setup-a'] },
+      { name: 'b', testMatch: 'b.spec.ts', dependencies: ['setup-b'] },
+    ],
+  });
+
+  // The `a` family fills both shards to 110 first. Putting both `b` tests on
+  // one of them would yield 211 / 110; paying setup B twice gives 161 each.
+  expect(shards.map(shard => shard.totalWeight)).toEqual([161, 161]);
+  expect(shards.map(shard => reportTestCount(shard.report))).toEqual([4, 4]);
+});
+
 test('should use the widest family span when span costs are tied', async ({}, testInfo) => {
   const shards = await runBalancedShards(testInfo, {
     'setup-a.spec.ts': `
